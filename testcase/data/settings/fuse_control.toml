@@ -1,0 +1,46 @@
+# FUSE control file for CAN_05BB001
+
+[filepaths]
+settings_dir = "test/CAN_05BB001/lumped/settings/fuse_v2/"
+input_dir    = "test/CAN_05BB001/lumped/input/"
+output_dir   = "test/CAN_05BB001/lumped/work/"
+
+[input]
+hydromet_suffix   = "_daymet_qobs_merged_legacy.nc"
+elevbands_suffix = "_elev_bands.nc"
+
+[model]
+constraints_file = "fuse_zConstraints_snow.txt"
+numerics_file    = "fuse_zNumerix.txt"
+decisions_file   = "fuse_zDecisions_2.txt"
+
+[forcing_coords]
+time      = "time"
+latitude  = "latitude"
+longitude = "longitude"
+
+[hydromet_vars]
+precip = "prcp"
+temp   = "temp"
+pet    = "pet_oudin"
+qobs   = "runoff_obs"
+
+[output]
+model_id = "2"
+q_only   = true
+
+[run_periods]
+date_start_sim  = "1987-01-02"
+date_end_sim    = "2009-12-31"
+date_start_eval = "1989-01-01"
+date_end_eval   = "1999-01-31"
+numtim_sub_str  = "-9999"
+
+[calibration]
+metric  = "KGE"
+transfo = "1"
+
+[sce]
+maxn   = 10000
+kstop  = 3
+pcento = 0.001

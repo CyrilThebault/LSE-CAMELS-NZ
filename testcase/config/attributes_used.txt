@@ -1,0 +1,21 @@
+uparea
+UpStreamLakes
+usLake
+Stream_Order
+elevation
+usSteep
+usLowGrad
+usAveSlope
+DIST_SEA
+SRC_OF_FLW
+usDaysRainGT25
+usRainDays10
+Mean Annual Rainfall
+usAnRainVar
+usPET
+Climate Zone
+LANDCOVER
+usParticleSize
+usHard
+usCalc
+Geology
