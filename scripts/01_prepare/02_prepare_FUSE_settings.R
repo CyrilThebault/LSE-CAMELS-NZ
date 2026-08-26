@@ -32,44 +32,27 @@ if (!dir.exists(source_settings)) {
   stop("FUSE template settings not found: ", source_settings)
 }
 
-ensure_dir(paths$settings)
-ensure_dir(paths$decisions)
-
-
-# ==============================================================================
-# Main FUSE control file
-#
-# In the reference FUSE tree, fuse_control.toml may be stored at the template
-# root rather than inside the settings directory.
-# ==============================================================================
-
-control <- file.path(source_root, "fuse_control.toml")
-
-if (!file.exists(control)) {
-  stop("Missing template fuse_control.toml: ", control)
-}
-
-invisible(
-  file.copy(
-    control,
-    file.path(paths$settings, "fuse_control.toml"),
-    overwrite = TRUE
-  )
-)
-
+settings_dir <- ensure_dir(paths$settings)
+decision_dir <- ensure_dir(paths$decisions)
 
 # ==============================================================================
 # Standard FUSE setting files
 # ==============================================================================
 
-regular <- list.files(source_settings, full.names = TRUE)
-regular <- regular[!dir.exists(regular)]
-regular <- regular[basename(regular) != "list_decision_78.txt"]
+setting_files <- c("fuse_zConstraints_snow.txt", "fuse_zNumerix.txt")
 
-if (length(regular)) {
-  file.copy(regular, paths$settings, overwrite = TRUE)
+source_files <- file.path(source_settings, setting_files)
+missing_files <- source_files[!file.exists(source_files)]
+
+if (length(missing_files)) {
+  stop("Missing FUSE setting file(s): ", paste(basename(missing_files), collapse = ", "))
 }
 
+ok <- file.copy(source_files, paths$settings, overwrite = TRUE)
+
+if (!all(ok)) {
+  stop("Failed to copy one or more canonical FUSE setting files.")
+}
 
 # ==============================================================================
 # Structural-decision files
@@ -79,47 +62,47 @@ if (length(regular)) {
 # the current FUSE experiment.
 # ==============================================================================
 
+source_decision_list <- file.path(source_settings, "list_decision_78.txt")
 decision_list <- file.path(paths$settings, "list_decision_78.txt")
 
-if (!file.exists(decision_list)) {
-  
-  candidates <- c(
-    file.path(source_root, "list_decision_78.txt"),
-    file.path(dirname(source_root), "list_decision_78.txt")
-  )
-  
-  hit <- candidates[file.exists(candidates)]
-  
-  if (!length(hit)) {
-    stop("Could not find list_decision_78.txt in the FUSE template.")
-  }
-  
-  file.copy(hit[1], decision_list, overwrite = TRUE)
+if (!file.exists(source_decision_list)) {
+  stop("Missing list_decision_78.txt in FUSE template: ", source_decision_list)
 }
 
-zDecisions <- scan(decision_list, what = character(), quiet = TRUE)
+if (!file.copy(source_decision_list, decision_list, overwrite = TRUE)) {
+  stop("Could not copy list_decision_78.txt.")
+}
+
+decision_table <- read.table(decision_list, header = TRUE, sep = ";", stringsAsFactors = FALSE, check.names = FALSE)
+
+if (!"ID" %in% names(decision_table)) {
+  stop("Column 'ID' missing from ", decision_list)
+}
+
+zDecisions <- unique(as.character(decision_table$ID))
 
 if (!length(zDecisions)) {
   stop("No zDecision IDs found in ", decision_list)
 }
 
-dec_dir <- file.path(source_settings, "fuse_zDecisions")
+source_decisions <- file.path(source_settings, "fuse_zDecisions")
 
-if (!dir.exists(dec_dir)) {
+if (!dir.exists(source_decisions)) {
   stop("Missing template zDecision folder: ", dec_dir)
 }
 
-dec_files <- file.path(dec_dir, paste0("fuse_zDecisions_", zDecisions, ".txt"))
-
+dec_files <- file.path(source_decisions, paste0("fuse_zDecisions_", zDecisions, ".txt"))
 missing_decisions <- dec_files[!file.exists(dec_files)]
 
 if (length(missing_decisions)) {
-  stop(
-    "Missing zDecision file(s): ",
-    paste(basename(missing_decisions), collapse = ", ")
-  )
+  stop("Missing zDecision file(s): ", paste(basename(missing_decisions), collapse = ", "))
 }
 
-file.copy(dec_files, paths$decisions, overwrite = TRUE)
+ok <- file.copy(dec_files, paths$decisions, overwrite = TRUE)
+
+if (!all(ok)) {
+  stop("Failed to copy one or more zDecision files.")
+}
 
 message("Canonical FUSE settings prepared in ", paths$settings)
+message("Number of structural decisions: ", length(zDecisions))

@@ -54,33 +54,11 @@ attr_dir <- file.path(experiment$paths$camels_nz, "CAMELS_NZ_Catchment_Atrribute
 
 metadata <- read.csv(
   file.path(attr_dir, "1.CAMELS_NZ_Catchment_information.csv"),
-  fileEncoding = "UTF-8-BOM",
-  stringsAsFactors = FALSE,
-  check.names = FALSE
-)
+  fileEncoding = "UTF-8-BOM", stringsAsFactors = FALSE, check.names = FALSE)
 
 if (!"Station_ID" %in% names(metadata)) {
   stop("Station_ID missing from CAMELS-NZ catchment information")
 }
-
-# Column names differ slightly between CAMELS-NZ file versions, so use the first
-# recognised name while still failing explicitly if none are present.
-pick_col <- function(df, candidates) {
-  
-  hit <- candidates[candidates %in% names(df)]
-  
-  if (!length(hit)) {
-    stop("None of the required columns found: ", paste(candidates, collapse = ", "))
-  }
-  
-  hit[1]
-}
-
-lat_col <- pick_col(metadata, c("Latitude (WGS 84)", "Latitude..WGS.84."))
-lon_col <- pick_col(metadata, c("Longitude(WGS 84)", "Longitude.WGS.84."))
-area_col <- pick_col(metadata, c("uparea", "Area", "area"))
-elev_col <- pick_col(metadata, c("elevation", "Elevation"))
-
 
 # ==============================================================================
 # Read and align one CAMELS-NZ time series
@@ -121,10 +99,10 @@ for (catchment in basins) {
     stop("Expected one metadata row for ", catchment)
   }
   
-  lat <- as.numeric(metadata[row, lat_col])
-  lon <- as.numeric(metadata[row, lon_col])
-  area_km2 <- as.numeric(metadata[row, area_col])
-  elevation <- as.numeric(metadata[row, elev_col])
+  lat <- as.numeric(metadata[row, "Latitude (WGS 84)"])
+  lon <- as.numeric(metadata[row, "Longitude(WGS 84)"])
+  area_km2 <- as.numeric(metadata[row, "uparea"])
+  elevation <- as.numeric(metadata[row, "elevation"])
   
   dates <- seq.POSIXt(
     as.POSIXct(paste(experiment$simulation_start, "00:00:00"), tz = "Etc/GMT-12"),
@@ -168,13 +146,47 @@ for (catchment in basins) {
   }
   
   # Negative precipitation and PET are not physically meaningful
-  pr[pr < 0] <- 0
-  pet[pet < 0] <- 0
+  if (any(pr < 0)) {
+    message("Negative precipitation detected and set to 0 for basin ", catchment)
+    pr[pr < 0] <- 0
+  }
+  
+  if (any(pet < 0)) {
+    message("Negative PET detected and set to 0 for basin ", catchment)
+    pet[pet < 0] <- 0
+  }
   
   # Convert observed streamflow from m3/s to catchment-average mm/day
   qobs <- flow * 86400 / (area_km2 * 1e6) * 1000
-  qobs[qobs < 0] <- NA_real_
   
+  if (any(qobs < 0, na.rm = TRUE)) {
+    message("Negative streamflow detected and set to NA for basin ", catchment)
+    qobs[qobs < 0] <- NA_real_
+  }
+  
+  # ============================================================================
+  # NetCDF time coordinate
+  #
+  # Current FUSE inputs follow CF conventions and use the midpoint of each daily
+  # forcing interval. Bounds retain the start and end of each interval.
+  # ============================================================================
+  
+  time_origin <- as.POSIXct("1950-01-01 00:00:00", tz = "Etc/GMT-12")
+  
+  interval_start <- dates
+  interval_end <- dates + 86400
+  
+  to_nc_time <- function(x) {
+    as.numeric(difftime(x, time_origin, units = "days"))
+  }
+  
+  time_bnds <- cbind(
+    to_nc_time(interval_start),
+    to_nc_time(interval_end)
+  )
+  
+  time_vals <- 0.5 * (time_bnds[, 1] + time_bnds[, 2])
+  time_units <- "days since 1950-01-01 00:00:00"
   
   # ============================================================================
   # Main FUSE forcing file
@@ -183,31 +195,75 @@ for (catchment in basins) {
   outdir <- ensure_dir(file.path(paths$forcings, catchment))
   inputname <- file.path(outdir, paste0(catchment, "_input.nc"))
   
-  latdim <- ncdim_def("latitude", "degreesN", lat)
-  londim <- ncdim_def("longitude", "degreesE", lon)
+  hrudim <- ncdim_def("hru", "", 1L, create_dimvar = FALSE)
+  
   timedim <- ncdim_def(
-    "time",
-    paste0("days since ", experiment$simulation_start),
-    0:(length(dates) - 1),
-    unlim = TRUE
+    "time", time_units, time_vals,
+    longname = "midpoint of the daily interval in local standard time",
+    create_dimvar = TRUE, unlim = TRUE
   )
+  
   nobsdim <- ncdim_def("nobs", "", 1L, create_dimvar = FALSE)
   
-  PET_def <- ncvar_def("pet", "mm/day", list(londim, latdim, timedim), prec = "double")
-  P_def <- ncvar_def("pr", "mm/day", list(londim, latdim, timedim), prec = "double")
-  Q_def <- ncvar_def("q_obs", "mm/day", list(nobsdim, timedim), missval = -9999, prec = "double")
-  T_def <- ncvar_def("temp", "degC", list(londim, latdim, timedim), prec = "double")
-  A_def <- ncvar_def("basin_area", "km2", list(), prec = "float")
+  nbndsdim <- ncdim_def("nbnds", "", 1:2, create_dimvar = FALSE)
   
-  nc <- nc_create(inputname, list(PET_def, P_def, Q_def, T_def, A_def), force_v4 = TRUE)
+  Latitude_def <- ncvar_def("latitude", "degrees_north", list(hrudim), missval = NA_real_, longname = "latitude", prec = "double")
   
-  ncvar_put(nc, PET_def, array(pet, c(1, 1, length(pet))))
-  ncvar_put(nc, P_def, array(pr, c(1, 1, length(pr))))
-  ncvar_put(nc, Q_def, array(qobs, c(1, length(qobs))))
-  ncvar_put(nc, T_def, array(temp, c(1, 1, length(temp))))
-  ncvar_put(nc, A_def, area_km2)
+  Longitude_def <- ncvar_def("longitude", "degrees_east", list(hrudim), missval = NA_real_, longname = "longitude", prec = "double")
   
+  CellArea_def <- ncvar_def("cell_area_in_basin", "m2", list(hrudim), longname = "area of spatial element within basin", prec = "float")
+  
+  BasinArea_def <- ncvar_def("basin_area", "km2", list(), longname = "basin area", prec = "float")
+  
+  P_def <- ncvar_def("pr", "mm/day", list(hrudim, timedim), missval = -9999, longname = "daily total precipitation", prec = "double")
+  
+  T_def <- ncvar_def("temp", "degC", list(hrudim, timedim), missval = -9999, longname = "mean daily temperature", prec = "double")
+  
+  PET_def <- ncvar_def("pet", "mm/day", list(hrudim, timedim), missval = -9999, longname = "mean daily potential evapotranspiration", prec = "double")
+  
+  Qobs_def <- ncvar_def("q_obs", "mm/day", list(nobsdim, timedim), missval = -9999, longname = "observed daily discharge", prec = "double")
+  
+  TimeBounds_def <- ncvar_def("time_bnds", time_units, list(nbndsdim, timedim), longname = "daily interval bounds in local standard time", prec = "double")
+  
+  nc <- nc_create(inputname, list(Latitude_def, Longitude_def, CellArea_def, BasinArea_def,
+                                  P_def, T_def, PET_def, Qobs_def, TimeBounds_def), force_v4 = TRUE)
+  
+  ncvar_put(nc, Latitude_def, lat)
+  ncvar_put(nc, Longitude_def, lon)
+  
+  ncvar_put(nc, CellArea_def, area_km2 * 1e6)
+  ncvar_put(nc, BasinArea_def, area_km2)
+  
+  ncvar_put(nc, P_def, array(pr, c(1, length(pr))))
+  ncvar_put(nc, T_def, array(temp, c(1, length(temp))))
+  ncvar_put(nc, PET_def, array(pet, c(1, length(pet))))
+  ncvar_put(nc, Qobs_def, array(qobs, c(1, length(qobs))))
+  
+  ncvar_put(nc, TimeBounds_def, t(time_bnds))
+  
+  # CF metadata used by the current FUSE forcing convention.
+  ncatt_put(nc, "latitude", "standard_name", "latitude")
+  ncatt_put(nc, "latitude", "cell_methods", "time: mean")
+  
+  ncatt_put(nc, "longitude", "standard_name", "longitude")
+  ncatt_put(nc, "longitude", "cell_methods", "time: mean")
+  
+  ncatt_put(nc, "time", "axis", "T")
+  ncatt_put(nc, "time", "standard_name", "time")
+  ncatt_put(nc, "time", "calendar", "proleptic_gregorian")
+  ncatt_put(nc, "time", "bounds", "time_bnds")
+  ncatt_put(nc, "time", "time_basis", "local standard time")
+  
+  ncatt_put(nc, "time_bnds", "calendar", "proleptic_gregorian")
+  ncatt_put(nc, "time_bnds", "time_basis", "local standard time")
+  
+  ncatt_put(nc, 0, "Conventions", "CF-1.10")
+  ncatt_put(nc, 0, "title", "FUSE meteorological forcing and streamflow observations")
+  ncatt_put(nc, 0, "station", catchment)
+  ncatt_put(nc, 0, "source", "CAMELS-NZ")
+  ncatt_put(nc, 0, "institution", "University of Calgary")
   ncatt_put(nc, 0, "workflow", "CAMELS-NZ lumped daily LSE")
+  
   nc_close(nc)
   
   
@@ -220,17 +276,22 @@ for (catchment in basins) {
   
   elevname <- file.path(outdir, paste0(catchment, "_elev_bands.nc"))
   
-  edim <- ncdim_def("elevation_band", "-", 1L)
+  latdim <- ncdim_def("latitude", "degreesN", lat, longname = "latitude")
+  londim <- ncdim_def("longitude", "degreesE", lon, longname = "longitude")
+  elevdim <- ncdim_def("elevation_band", "-", 1L, longname = "elevation_band")
   
-  af <- ncvar_def("area_frac", "-", list(londim, latdim, edim), prec = "double")
-  me <- ncvar_def("mean_elev", "m asl", list(londim, latdim, edim), prec = "double")
-  pf <- ncvar_def("prec_frac", "-", list(londim, latdim, edim), prec = "double")
+  AreaFrac_def <- ncvar_def("area_frac", "-", list(latdim, londim, elevdim), longname = "Fraction of the catchment covered by each elevation band", prec = "double")
+  MeanElev_def <- ncvar_def("mean_elev", "m asl", list(latdim, londim, elevdim), longname = "Mean elevation of each elevation band", prec = "double")
+  PrecFrac_def <- ncvar_def("prec_frac", "-", list(latdim, londim, elevdim), longname = "Fraction of catchment precipitation that falls on each elevation band", prec = "double")
   
-  nc <- nc_create(elevname, list(af, me, pf), force_v4 = TRUE)
+  nc <- nc_create(elevname, list(AreaFrac_def, MeanElev_def, PrecFrac_def), force_v4 = TRUE)
   
-  ncvar_put(nc, af, array(1, c(1, 1, 1)))
-  ncvar_put(nc, me, array(elevation, c(1, 1, 1)))
-  ncvar_put(nc, pf, array(1, c(1, 1, 1)))
+  ncvar_put(nc, AreaFrac_def, array(1, dim = c(1, 1, 1)))
+  ncvar_put(nc, MeanElev_def, array(elevation, dim = c(1, 1, 1)))
+  ncvar_put(nc, PrecFrac_def, array(1, dim = c(1, 1, 1)))
+  
+  ncatt_put(nc, 0, "institution", "University of Calgary")
+  ncatt_put(nc, 0, "workflow", "CAMELS-NZ lumped daily LSE")
   
   nc_close(nc)
 }

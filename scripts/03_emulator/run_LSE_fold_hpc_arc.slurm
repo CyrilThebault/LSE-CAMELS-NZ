@@ -11,9 +11,18 @@
 set -euo pipefail
 
 # Load the software stack required by FUSE and the emulator workflow.
+. /work/comphyd_lab/local/modules/spack/2024v5/lmod-init-bash
+
 module purge
-module load lib/netcdf/4.9.2
-module load R/4.3.1
+module unuse $MODULEPATH
+module use /work/comphyd_lab/local/modules/spack/2024v5/modules/linux-rocky8-x86_64/Core/
+
+module load gcc/14.2.0
+module load cmake/3.30.2
+module load hdf5/1.14.3
+module load netcdf-c/4.9.2
+module load netcdf-fortran/4.6.1
+module load r/4.4.1
 
 # Basin-level jobs are parallelised with GNU Parallel, so keep numerical
 # libraries single-threaded to avoid oversubscribing the allocated CPUs.

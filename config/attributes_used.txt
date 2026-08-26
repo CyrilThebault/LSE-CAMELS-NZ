@@ -1,5 +1,4 @@
 uparea
-UpStreamLakes
 usLake
 Stream_Order
 elevation

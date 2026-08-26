@@ -9,6 +9,12 @@ A small prepared testcase is available under `testcase/` for users who want to e
 1. Copy `config/basins.txt.example` to `config/basins.txt` and fill it with the study basins. It may be a one-column no-header ID list, or a table with a header containing a column named `ID`.
 2. Edit `config/experiment.R` to match your objectives. `ROOT` can be supplied as an environment variable.
 3. Review `config/attributes_used.txt`.
+4. Make sure you are in `/your/path/EmulatorForLumpedFUSE_CAMELS-NZ`
+5. Prepare your working environment by compiling FUSE staging branch (see  https://ch-earth-fuse.readthedocs.io/en/staging/install/install_fuse/)
+6. Check R packages 
+```bash
+Rscript scripts/00_check_packages.R
+```
 
 ### Using the prepared testcase
 
@@ -45,7 +51,7 @@ It can be adapted to other Slurm-based HPC systems by modifying the module loadi
 
 ```bash
 export DIR_MAIN="$PWD"
-sbatch scripts/02_iter0/run_iter0.slurm
+sbatch scripts/02_iter0/run_iter0_hpc_arc.slurm
 ```
 
 ### On a local machine
@@ -102,7 +108,7 @@ export EXPERIMENT_DIR="$PWD/experiments/kfold/fold_01"
 export ZDECISION=126
 export NREFINE=2
 
-sbatch scripts/03_emulator/run_LSE_fold.slurm
+sbatch scripts/03_emulator/run_LSE_fold_hpc_arc.slurm
 ```
 
 ### On a local machine

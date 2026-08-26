@@ -46,6 +46,9 @@ prepare_fuse_workspace <- function(dirMain, work_dir, basinID, zDecision, experi
   settings_dir <- ensure_dir(file.path(work_dir, "settings"))
   output_dir <- ensure_dir(file.path(work_dir, "output"))
   
+  decision_dir <- ensure_dir(file.path(settings_dir, "fuse_zDecisions"))
+  control_dir <- ensure_dir(file.path(settings_dir, "fuse_control"))
+  
   # Copy basin-specific forcing files.
   forcing_source <- file.path(paths$forcings, basinID)
   
@@ -85,52 +88,73 @@ prepare_fuse_workspace <- function(dirMain, work_dir, basinID, zDecision, experi
     stop("Missing zDecision file: ", decision_file)
   }
   
-  if (!file.copy(decision_file, settings_dir, overwrite = TRUE)) {
+  if (!file.copy(decision_file, decision_dir, overwrite = TRUE)) {
     stop("Could not copy ", decision_file)
   }
   
-  # Adapt the canonical FUSE control file to the temporary workspace and the
-  # CAMELS-NZ forcing-variable names used by this workflow.
-  control_template <- file.path(settings_dir, "fuse_control.toml")
+  # Build the basin/model FUSE control file directly for the current FUSE version.
+
+  simulation_start <- as.POSIXct(experiment$simulation_start, tz = "Etc/GMT-12")
+  simulation_end <- as.POSIXct(experiment$simulation_end, tz = "Etc/GMT-12")
+  calibration_start <- as.POSIXct(experiment$calibration_start, tz = "Etc/GMT-12")
+  calibration_end <- as.POSIXct(experiment$calibration_end, tz = "Etc/GMT-12")
   
-  if (!file.exists(control_template)) {
-    stop("Missing fuse_control.toml in canonical settings")
-  }
+  toml <- c(
+    paste0("# FUSE control file for ", basinID, " - model ", zDecision),
+    "",
+    "[filepaths]",
+    paste0('settings_dir = "', settings_dir, '/"'),
+    paste0('input_dir    = "', input_dir, '/"'),
+    paste0('output_dir   = "', output_dir, '/"'),
+    "",
+    "[input]",
+    'hydromet_suffix  = "_input.nc"',
+    'elevbands_suffix = "_elev_bands.nc"',
+    "",
+    "[model]",
+    'constraints_file = "fuse_zConstraints_snow.txt"',
+    'numerics_file    = "fuse_zNumerix.txt"',
+    paste0('decisions_file = "fuse_zDecisions/fuse_zDecisions_', zDecision, '.txt"'),
+    "",
+    "[forcing_coords]",
+    'time      = "time"',
+    'latitude  = "latitude"',
+    'longitude = "longitude"',
+    "",
+    "[hydromet_vars]",
+    'precip = "pr"',
+    'temp   = "temp"',
+    'pet    = "pet"',
+    'qobs   = "q_obs"',
+    "",
+    "[output]",
+    paste0('model_id = "', zDecision, '"'),
+    "variables = [",
+    '  "q_instnt",',
+    '  "q_routed",',
+    '  "q_obs"',
+    "]",
+    "",
+    "[run_periods]",
+    paste0('date_start_sim  = "',format(simulation_start + 86400, "%Y-%m-%d"),'"'), # The simulation therefore starts at the end of the first forcing interval
+    paste0('date_end_sim    = "', format(simulation_end, "%Y-%m-%d"), '"'),
+    paste0('date_start_eval = "', format(calibration_start, "%Y-%m-%d"), '"'),
+    paste0('date_end_eval   = "', format(calibration_end, "%Y-%m-%d"), '"'),
+    'numtim_sub_str = "-9999"',
+    "",
+    "[calibration]",
+    paste0('metric  = "', experiment$metric, '"'),
+    paste0('transfo = "', experiment$transformation, '"'),
+    "",
+    "[sce]",
+    "maxn   = 10000",
+    "kstop  = 3",
+    "pcento = 0.001"
+  )
   
-  fm <- readLines(control_template, warn = FALSE)
+  config_file <- file.path(control_dir, paste0("fuse_control_", basinID, "_", zDecision, ".toml"))
   
-  fm <- set_toml(fm, "settings_dir", paste0(settings_dir, "/"))
-  fm <- set_toml(fm, "input_dir", paste0(input_dir, "/"))
-  fm <- set_toml(fm, "output_dir", paste0(output_dir, "/"))
-  fm <- set_toml(fm, "hydromet_suffix", "_input.nc")
-  fm <- set_toml(fm, "elevbands_suffix", "_elev_bands.nc")
-  fm <- set_toml(fm, "constraints_file", "fuse_zConstraints_snow.txt")
-  fm <- set_toml(fm, "numerics_file", "fuse_zNumerix.txt")
-  fm <- set_toml(fm, "decisions_file", paste0("fuse_zDecisions_", zDecision, ".txt"))
-  
-  fm <- set_toml(fm, "time", "time")
-  fm <- set_toml(fm, "latitude", "latitude")
-  fm <- set_toml(fm, "longitude", "longitude")
-  fm <- set_toml(fm, "precip", "pr")
-  fm <- set_toml(fm, "temp", "temp")
-  fm <- set_toml(fm, "pet", "pet")
-  fm <- set_toml(fm, "qobs", "q_obs")
-  
-  fm <- set_toml(fm, "model_id", zDecision)
-  fm <- set_toml(fm, "q_only", "true", quote = FALSE)
-  
-  fm <- set_toml(fm, "date_start_sim", format(experiment$simulation_start))
-  fm <- set_toml(fm, "date_end_sim", format(experiment$simulation_end))
-  fm <- set_toml(fm, "date_start_eval", format(experiment$calibration_start))
-  fm <- set_toml(fm, "date_end_eval", format(experiment$calibration_end))
-  
-  fm <- set_toml(fm, "numtim_sub_str", "-9999")
-  fm <- set_toml(fm, "metric", experiment$metric)
-  fm <- set_toml(fm, "transfo", experiment$transformation)
-  
-  config_file <- file.path(settings_dir, paste0("fuse_", basinID, "_", zDecision, ".toml"))
-  
-  writeLines(fm, config_file)
+  writeLines(toml, config_file)
   
   list(
     input_dir = input_dir,
@@ -289,7 +313,7 @@ run_fuse <- function(params_normalized, basinID, zDecision, fuse_settings_files,
   # Run FUSE
   # ============================================================================
   
-  config_file <- file.path(work_dir, "settings", paste0("fuse_", basinID, "_", zDecision, ".toml"))
+  config_file <- file.path(work_dir, "settings", "fuse_control", paste0("fuse_control_", basinID, "_", zDecision, ".toml"))
   
   if (!file.exists(config_file)) {
     stop("Missing basin TOML: ", config_file)

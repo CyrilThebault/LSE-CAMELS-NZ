@@ -26,7 +26,6 @@ dirUseful <- paths$useful
 
 ensure_dir(dirUseful)
 
-fileControl <- file.path(dirSettings, "fuse_control.toml")
 fileConstraints <- file.path(dirSettings, "fuse_zConstraints_snow.txt")
 fileNumerix <- file.path(dirSettings, "fuse_zNumerix.txt")
 fileDecisionList <- file.path(dirSettings, "list_decision_78.txt")
@@ -260,10 +259,8 @@ get_parameter_mask <- function(decision, ParameterNames, fit) {
 # Read FUSE settings
 # ==============================================================================
 
-global <- readLines(fileControl, warn = FALSE)
 zConstraints <- readLines(fileConstraints, warn = FALSE)
 zNumerix <- readLines(fileNumerix, warn = FALSE)
-
 
 # ==============================================================================
 # Parameter information
@@ -386,7 +383,6 @@ for (i in seq_along(decisions)) {
 # ==============================================================================
 
 fuse_settings_files <- list(
-  global = global,
   zConstraints = zConstraints,
   zNumerix = zNumerix,
   params = params,
