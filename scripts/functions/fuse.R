@@ -263,9 +263,17 @@ run_fuse <- function(params_normalized, basinID, zDecision, fuse_settings_files,
     stop("Wrong number of normalized parameters")
   }
   
-  if (any(!is.finite(params_normalized)) || any(params_normalized < 0 | params_normalized > 1)) {
-    stop("Parameters must be finite in [0,1]")
+  if (any(!is.finite(params_normalized))) {
+    stop("Parameters must be finite")
   }
+  
+  tol <- 1e-12 # needed to avoid numerical issues
+  
+  if (any(params_normalized < -tol | params_normalized > 1 + tol)) {
+    stop("Parameters must be in [0,1]")
+  }
+  
+  params_normalized <- pmin(1, pmax(0, params_normalized))
   
   
   # ============================================================================

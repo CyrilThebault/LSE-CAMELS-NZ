@@ -116,6 +116,9 @@ for (ml in experiment$emulators) {
   # Retain the best unique candidates found in the final GA population.
   p <- as.data.frame(ga@population)
   names(p) <- paste0("p", seq_len(nParams))
+  
+  p[] <- lapply(p, function(x) pmin(1, pmax(0, x))) # needed to avoid numerical issues
+  
   p$eNKGE <- as.numeric(ga@fitness)
   
   p <- unique(p)
