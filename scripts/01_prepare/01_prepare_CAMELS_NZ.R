@@ -1,12 +1,12 @@
 #!/usr/bin/env Rscript
 
 # ==============================================================================
-# Prepare CAMELS-NZ forcing files for lumped daily FUSE runs
+# Prepare CAMELS-NZ forcing files for lumped FUSE runs
 #
 # For each selected basin, this script:
-#   - reads catchment metadata and daily CAMELS-NZ time series,
+#   - reads catchment metadata and CAMELS-NZ time series,
 #   - aligns meteorological forcing and streamflow to the simulation period,
-#   - converts observed discharge from m3/s to mm/day,
+#   - converts observed discharge from m3/s to catchment-average water depth,
 #   - writes the lumped FUSE forcing NetCDF file,
 #   - writes a single-band elevation file for the lumped configuration.
 # ==============================================================================
@@ -24,6 +24,7 @@ source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
 experiment <- load_workflow_config(dirMain)
+time_info <- get_timestep_info(experiment)
 paths <- project_paths(dirMain)
 
 suppressPackageStartupMessages(library(ncdf4))
@@ -67,7 +68,7 @@ if (!"Station_ID" %in% names(metadata)) {
 # that gaps or shifted periods cannot silently propagate into the NetCDF files.
 # ==============================================================================
 
-read_aligned <- function(file, value_col, dates) {
+read_aligned <- function(file, value_col, dates, timezone) {
   
   if (!file.exists(file)) {
     stop("Missing CAMELS-NZ file: ", file)
@@ -79,7 +80,7 @@ read_aligned <- function(file, value_col, dates) {
     stop("Missing time/", value_col, " in ", file)
   }
   
-  x$time <- as.POSIXct(x$time, tz = "Etc/GMT-12")
+  x$time <- as.POSIXct(x$time, tz = timezone)
   
   x[[value_col]][match(dates, x$time)]
 }
@@ -104,42 +105,29 @@ for (catchment in basins) {
   area_km2 <- as.numeric(metadata[row, "uparea"])
   elevation <- as.numeric(metadata[row, "elevation"])
   
-  dates <- seq.POSIXt(
-    as.POSIXct(paste(experiment$simulation_start, "00:00:00"), tz = "Etc/GMT-12"),
-    as.POSIXct(paste(experiment$simulation_end, "00:00:00"), tz = "Etc/GMT-12"),
-    by = "1 day"
-  )
+  dates <- seq.POSIXt(from = experiment$simulation_start, to = experiment$simulation_end, by = time_info$time_units)
   
   base <- experiment$paths$camels_nz
   
-  # Daily meteorological forcing and observed discharge
+  prefix <- experiment$timestep
+  file_prefix <- ifelse (experiment$timestep == "daily", "daily_", "")
+  
+  # Meteorological forcing and observed discharge
   pr <- read_aligned(
-    file.path(base, "CAMELS_NZ_daily_Precipitation",
-              paste0("daily_precipitation_station_id_", catchment, ".csv")),
-    "precipitation",
-    dates
-  )
+    file.path(base, paste0("CAMELS_NZ_", prefix, "_Precipitation"), paste0(file_prefix, "precipitation_station_id_", catchment, ".csv")),
+    "precipitation", dates, experiment$timezone)
   
   temp <- read_aligned(
-    file.path(base, "CAMELS_NZ_daily_Temperature",
-              paste0("daily_temperature_station_id_", catchment, ".csv")),
-    "temperature",
-    dates
-  ) - 273.15
+    file.path(base, paste0("CAMELS_NZ_", prefix, "_Temperature"), paste0(file_prefix, "temperature_station_id_", catchment, ".csv")),
+    "temperature", dates, experiment$timezone) - 273.15
   
   pet <- read_aligned(
-    file.path(base, "CAMELS_NZ_daily_PET",
-              paste0("daily_PET_station_id_", catchment, ".csv")),
-    "PET",
-    dates
-  )
+    file.path(base, paste0("CAMELS_NZ_", prefix, "_PET"), paste0(file_prefix, "PET_station_id_", catchment, ".csv")),
+    "PET", dates, experiment$timezone)
   
   flow <- read_aligned(
-    file.path(base, "CAMELS_NZ_daily_Streamflow",
-              paste0("daily_flow_station_id_", catchment, ".csv")),
-    "flow",
-    dates
-  )
+    file.path(base, paste0("CAMELS_NZ_", prefix, "_Streamflow"), paste0(file_prefix, "flow_station_id_", catchment, ".csv")),
+    "flow", dates, experiment$timezone)
   
   if (anyNA(pr) || anyNA(temp) || anyNA(pet)) {
     stop("Missing meteorological forcing(s) for basin ", catchment)
@@ -156,8 +144,8 @@ for (catchment in basins) {
     pet[pet < 0] <- 0
   }
   
-  # Convert observed streamflow from m3/s to catchment-average mm/day
-  qobs <- flow * 86400 / (area_km2 * 1e6) * 1000
+  # Convert observed streamflow from m3/s to catchment-average water depth over one model time step.
+  qobs <- flow * time_info$seconds_per_timestep / (area_km2 * 1e6) * 1000
   
   if (any(qobs < 0, na.rm = TRUE)) {
     message("Negative streamflow detected and set to NA for basin ", catchment)
@@ -167,17 +155,17 @@ for (catchment in basins) {
   # ============================================================================
   # NetCDF time coordinate
   #
-  # Current FUSE inputs follow CF conventions and use the midpoint of each daily
+  # Current FUSE inputs follow CF conventions and use the midpoint of each
   # forcing interval. Bounds retain the start and end of each interval.
   # ============================================================================
   
-  time_origin <- as.POSIXct("1950-01-01 00:00:00", tz = "Etc/GMT-12")
+  time_origin <- as.POSIXct("1950-01-01 00:00:00", tz = experiment$timezone)
   
   interval_start <- dates
-  interval_end <- dates + 86400
+  interval_end <- dates + time_info$seconds_per_timestep
   
   to_nc_time <- function(x) {
-    as.numeric(difftime(x, time_origin, units = "days"))
+    as.numeric(difftime(x, time_origin, units = time_info$time_units))
   }
   
   time_bnds <- cbind(
@@ -186,7 +174,7 @@ for (catchment in basins) {
   )
   
   time_vals <- 0.5 * (time_bnds[, 1] + time_bnds[, 2])
-  time_units <- "days since 1950-01-01 00:00:00"
+  time_units <- paste(time_info$time_units, "since", format(time_origin, "%Y-%m-%d %H:%M:%S"))
   
   # ============================================================================
   # Main FUSE forcing file
@@ -197,11 +185,9 @@ for (catchment in basins) {
   
   hrudim <- ncdim_def("hru", "", 1L, create_dimvar = FALSE)
   
-  timedim <- ncdim_def(
-    "time", time_units, time_vals,
-    longname = "midpoint of the daily interval in local standard time",
-    create_dimvar = TRUE, unlim = TRUE
-  )
+  timedim <- ncdim_def("time", time_units, time_vals,
+                       longname = paste0("midpoint of the ",experiment$timestep ," interval in local standard time"), 
+                       create_dimvar = TRUE, unlim = TRUE)
   
   nobsdim <- ncdim_def("nobs", "", 1L, create_dimvar = FALSE)
   
@@ -215,15 +201,20 @@ for (catchment in basins) {
   
   BasinArea_def <- ncvar_def("basin_area", "km2", list(), longname = "basin area", prec = "float")
   
-  P_def <- ncvar_def("pr", "mm/day", list(hrudim, timedim), missval = -9999, longname = "daily total precipitation", prec = "double")
+  P_def <- ncvar_def("pr", time_info$hydro_units, list(hrudim, timedim), missval = -9999, 
+                     longname = paste0(experiment$timestep, " total precipitation"), prec = "double")
   
-  T_def <- ncvar_def("temp", "degC", list(hrudim, timedim), missval = -9999, longname = "mean daily temperature", prec = "double")
+  T_def <- ncvar_def("temp", "degC", list(hrudim, timedim), missval = -9999, 
+                     longname = paste0("mean ",experiment$timestep," temperature"), prec = "double")
   
-  PET_def <- ncvar_def("pet", "mm/day", list(hrudim, timedim), missval = -9999, longname = "mean daily potential evapotranspiration", prec = "double")
+  PET_def <- ncvar_def("pet", time_info$hydro_units, list(hrudim, timedim), missval = -9999, 
+                       longname = paste0("mean ",experiment$timestep," potential evapotranspiration"), prec = "double")
   
-  Qobs_def <- ncvar_def("q_obs", "mm/day", list(nobsdim, timedim), missval = -9999, longname = "observed daily discharge", prec = "double")
+  Qobs_def <- ncvar_def("q_obs", time_info$hydro_units, list(nobsdim, timedim), missval = -9999, 
+                        longname = paste0("observed ",experiment$timestep," discharge"), prec = "double")
   
-  TimeBounds_def <- ncvar_def("time_bnds", time_units, list(nbndsdim, timedim), longname = "daily interval bounds in local standard time", prec = "double")
+  TimeBounds_def <- ncvar_def("time_bnds", time_units, list(nbndsdim, timedim), 
+                              longname = paste0(experiment$timestep, " interval bounds in local standard time"), prec = "double")
   
   nc <- nc_create(inputname, list(Latitude_def, Longitude_def, CellArea_def, BasinArea_def,
                                   P_def, T_def, PET_def, Qobs_def, TimeBounds_def), force_v4 = TRUE)
@@ -262,7 +253,7 @@ for (catchment in basins) {
   ncatt_put(nc, 0, "station", catchment)
   ncatt_put(nc, 0, "source", "CAMELS-NZ")
   ncatt_put(nc, 0, "institution", "University of Calgary")
-  ncatt_put(nc, 0, "workflow", "CAMELS-NZ lumped daily LSE")
+  ncatt_put(nc, 0, "workflow", paste0("CAMELS-NZ lumped ", experiment$timestep, " LSE"))
   
   nc_close(nc)
   
@@ -291,7 +282,7 @@ for (catchment in basins) {
   ncvar_put(nc, PrecFrac_def, array(1, dim = c(1, 1, 1)))
   
   ncatt_put(nc, 0, "institution", "University of Calgary")
-  ncatt_put(nc, 0, "workflow", "CAMELS-NZ lumped daily LSE")
+  ncatt_put(nc, 0, "workflow", paste0("CAMELS-NZ lumped ", experiment$timestep, " LSE"))
   
   nc_close(nc)
 }

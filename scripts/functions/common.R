@@ -23,6 +23,51 @@ load_workflow_config <- function(dirMain) {
   env$experiment
 }
 
+# ==============================================================================
+# Time-step information
+#
+# Centralize all quantities that depend on the temporal resolution so the rest
+# of the workflow can remain identical for daily and hourly simulations.
+# ==============================================================================
+
+get_timestep_info <- function(experiment) {
+  
+  if (experiment$timestep == "daily") {
+    
+    list(timestep = "daily", time_units = "days", hydro_units = "mm/day", seconds_per_timestep = 86400, time_format = "%Y-%m-%d")
+    
+  } else if (experiment$timestep == "hourly") {
+    
+    list(timestep = "hourly", time_units = "hours", hydro_units = "mm/hour", seconds_per_timestep = 3600, time_format = "%Y-%m-%d %H:%M:%S")
+    
+  } else {
+    
+    stop("Unknown timestep: ", experiment$timestep, ". Expected 'daily' or 'hourly'.")
+  }
+}
+
+# ==============================================================================
+# Convert a NetCDF time coordinate to POSIXct
+#
+# The NetCDF time unit is checked against the temporal resolution defined in
+# experiment.R before converting the numerical coordinate to timestamps.
+# ==============================================================================
+
+nc_time_to_posixct <- function(time_raw, units, experiment) {
+  
+  time_info <- get_timestep_info(experiment)
+  
+  time_unit <- sub(" since.*$", "", units)
+  origin_string <- sub("^[^ ]+ since ", "", units)
+  
+  if (time_unit != time_info$time_units) {
+    stop("NetCDF time unit '", time_unit, "' does not match configured time unit '",time_info$time_units, "'.")
+  }
+  
+  origin <- as.POSIXct(origin_string, tz = experiment$timezone)
+  
+  origin + time_raw * time_info$seconds_per_timestep
+}
 
 # ==============================================================================
 # Load one R object from an RData file
@@ -58,29 +103,6 @@ ensure_dir <- function(path) {
   }
   
   invisible(path)
-}
-
-
-# ==============================================================================
-# Replace one value in a TOML configuration file
-# ==============================================================================
-
-set_toml <- function(x, key, value, quote = TRUE) {
-  
-  pattern <- paste0("^\\s*", key, "\\s*=.*$")
-  hit <- grepl(pattern, x)
-  
-  if (sum(hit) != 1L) {
-    stop("Expected exactly one occurrence of TOML key: ", key)
-  }
-  
-  x[hit] <- if (quote) {
-    sprintf('%s = "%s"', key, value)
-  } else {
-    sprintf("%s = %s", key, value)
-  }
-  
-  x
 }
 
 

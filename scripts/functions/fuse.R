@@ -39,6 +39,7 @@ get_parameter_info <- function(fuse_settings_files, zDecision) {
 prepare_fuse_workspace <- function(dirMain, work_dir, basinID, zDecision, experiment) {
   
   paths <- project_paths(dirMain)
+  time_info <- get_timestep_info(experiment)
   
   ensure_dir(work_dir)
   
@@ -94,11 +95,6 @@ prepare_fuse_workspace <- function(dirMain, work_dir, basinID, zDecision, experi
   
   # Build the basin/model FUSE control file directly for the current FUSE version.
 
-  simulation_start <- as.POSIXct(experiment$simulation_start, tz = "Etc/GMT-12")
-  simulation_end <- as.POSIXct(experiment$simulation_end, tz = "Etc/GMT-12")
-  calibration_start <- as.POSIXct(experiment$calibration_start, tz = "Etc/GMT-12")
-  calibration_end <- as.POSIXct(experiment$calibration_end, tz = "Etc/GMT-12")
-  
   toml <- c(
     paste0("# FUSE control file for ", basinID, " - model ", zDecision),
     "",
@@ -136,10 +132,10 @@ prepare_fuse_workspace <- function(dirMain, work_dir, basinID, zDecision, experi
     "]",
     "",
     "[run_periods]",
-    paste0('date_start_sim  = "',format(simulation_start + 86400, "%Y-%m-%d"),'"'), # The simulation therefore starts at the end of the first forcing interval
-    paste0('date_end_sim    = "', format(simulation_end, "%Y-%m-%d"), '"'),
-    paste0('date_start_eval = "', format(calibration_start, "%Y-%m-%d"), '"'),
-    paste0('date_end_eval   = "', format(calibration_end, "%Y-%m-%d"), '"'),
+    paste0('date_start_sim  = "',format(experiment$simulation_start + time_info$seconds_per_timestep, time_info$time_format),'"'), # The simulation therefore starts at the end of the first forcing interval
+    paste0('date_end_sim    = "', format(experiment$simulation_end, time_info$time_format), '"'),
+    paste0('date_start_eval = "', format(experiment$calibration_start, time_info$time_format), '"'),
+    paste0('date_end_eval   = "', format(experiment$calibration_end, time_info$time_format), '"'),
     'numtim_sub_str = "-9999"',
     "",
     "[calibration]",
@@ -169,7 +165,7 @@ prepare_fuse_workspace <- function(dirMain, work_dir, basinID, zDecision, experi
 # Read observed streamflow from a FUSE forcing file
 # ==============================================================================
 
-read_qobs <- function(input_file) {
+read_qobs <- function(input_file, experiment) {
   
   nc <- ncdf4::nc_open(input_file)
   on.exit(ncdf4::nc_close(nc))
@@ -177,18 +173,10 @@ read_qobs <- function(input_file) {
   time_raw <- ncdf4::ncvar_get(nc, "time")
   units <- ncdf4::ncatt_get(nc, "time", "units")$value
   
-  origin <- as.Date(sub("^(days|hours) since ", "", units))
+  time <- nc_time_to_posixct(time_raw, units, experiment)
   
-  if (grepl("^hours since", units)) {
-    dates <- origin + time_raw / 24
-  } else {
-    dates <- origin + time_raw
-  }
-  
-  data.frame(
-    date = as.Date(dates),
-    qObs_mmd = ncdf4::ncvar_get(nc, "q_obs")
-  )
+  data.frame(time = time, 
+             qObs_mmd = ncdf4::ncvar_get(nc, "q_obs"))
 }
 
 
@@ -201,7 +189,7 @@ read_qobs <- function(input_file) {
 
 compute_flow_metrics <- function(qsim, qobs, basinID, periods) {
   
-  df <- merge(qsim, qobs, by = "date")
+  df <- merge(qsim, qobs, by = "time")
   
   out <- vector("list", length(periods))
   names(out) <- names(periods)
@@ -212,8 +200,8 @@ compute_flow_metrics <- function(qsim, qobs, basinID, periods) {
     tf <- periods[[i]]$tf
     
     rows <- which(
-      df$date >= ti &
-        df$date <= tf &
+      df$time >= ti &
+        df$time <= tf &
         !is.na(df$qObs_mmd) &
         df$qObs_mmd >= 0 &
         !is.na(df$qSim_mmd)
@@ -263,8 +251,11 @@ compute_flow_metrics <- function(qsim, qobs, basinID, periods) {
 # ==============================================================================
 
 run_fuse <- function(params_normalized, basinID, zDecision, fuse_settings_files,
-                     work_dir, fuse_exe, qObs, periods, timeout_seconds = 60L,
-                     store_hydrograph = FALSE) {
+                     work_dir, qObs, periods, experiment) {
+  
+  fuse_exe <- experiment$paths$fuse_exe
+  timeout_seconds <- experiment$fuse_timeout_seconds
+  store_hydrograph <- experiment$store_hydrographs
   
   info <- get_parameter_info(fuse_settings_files, zDecision)
   
@@ -389,18 +380,10 @@ run_fuse <- function(params_normalized, basinID, zDecision, fuse_settings_files,
   time_raw <- ncdf4::ncvar_get(nc, "time")
   units <- ncdf4::ncatt_get(nc, "time", "units")$value
   
-  origin <- as.Date(sub("^(days|hours) since ", "", units))
+  time <- nc_time_to_posixct(time_raw, units, experiment)
   
-  dates <- if (grepl("^hours since", units)) {
-    origin + time_raw / 24
-  } else {
-    origin + time_raw
-  }
-  
-  qsim <- data.frame(
-    date = as.Date(dates),
-    qSim_mmd = ncdf4::ncvar_get(nc, "q_routed")
-  )
+  qsim <- data.frame(time = time,
+                     qSim_mmd = ncdf4::ncvar_get(nc, "q_routed"))
   
   metrics <- compute_flow_metrics(qsim, qObs, basinID, periods)
   

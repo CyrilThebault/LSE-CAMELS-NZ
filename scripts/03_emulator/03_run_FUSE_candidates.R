@@ -52,7 +52,7 @@ paramSearch <- load_rdata_single(file_candidates)
 
 prepare_fuse_workspace(dirMain, work_dir, basinID, zDecision, experiment)
 
-qObs <- read_qobs(file.path(work_dir, "input", paste0(basinID, "_input.nc")))
+qObs <- read_qobs(file.path(work_dir, "input", paste0(basinID, "_input.nc")), experiment)
 periods <- metric_periods_from_config(experiment)
 
 
@@ -87,11 +87,9 @@ for (i in seq_len(nrow(paramSearch))) {
     zDecision,
     meta,
     work_dir,
-    experiment$paths$fuse_exe,
     qObs,
     periods,
-    experiment$fuse_timeout_seconds,
-    experiment$store_hydrographs
+    experiment
   )
   
   paramSearch$runTime_sec[i] <- as.numeric(difftime(Sys.time(), t0, units = "secs"))

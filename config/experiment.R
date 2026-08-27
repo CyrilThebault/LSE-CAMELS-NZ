@@ -1,4 +1,4 @@
-# Central configuration for the daily lumped CAMELS-NZ LSE workflow.
+# Central configuration for the lumped CAMELS-NZ LSE workflow.
 # All scripts source this file through scripts/functions/common.R.
 
 local_machine <- Sys.info()[["sysname"]] == "Darwin"
@@ -17,13 +17,17 @@ experiment <- list(
   spatialisation = "Lumped",
   forcing        = "VCSN",
   zDecision      = "126",
+  
+  timezone = "Etc/GMT-12",
 
-  simulation_start = as.Date("1987-01-01"),
-  simulation_end   = as.Date("2009-12-31"),
-  calibration_start = as.Date("1989-01-01"),
-  calibration_end   = as.Date("1998-12-31"),
-  evaluation_start  = as.Date("1999-01-01"),
-  evaluation_end    = as.Date("2009-12-31"),
+  simulation_start = as.POSIXct("1987-01-01", tz = timezone),
+  simulation_end   = as.POSIXct("2009-12-31", tz = timezone),
+  
+  calibration_start = as.POSIXct("1989-01-01", tz = timezone),
+  calibration_end   = as.POSIXct("1998-12-31", tz = timezone),
+  
+  evaluation_start = as.POSIXct("1999-01-01", tz = timezone),
+  evaluation_end   = as.POSIXct("2009-12-31", tz = timezone),
 
   metric         = "KGE",
   transformation = "1",

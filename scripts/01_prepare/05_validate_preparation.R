@@ -20,6 +20,7 @@ source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
 experiment <- load_workflow_config(dirMain)
+time_info <- get_timestep_info(experiment)
 paths <- project_paths(dirMain)
 
 suppressPackageStartupMessages(library(ncdf4))
@@ -40,7 +41,8 @@ rows <- lapply(basins, function(id) {
   has_att <- sum(as.character(attributes$ID) == id) == 1L
   ok_input <- file.exists(input)
   
-  n_days <- NA_integer_
+  time_unit_valid <- NA
+  n_timesteps <- NA_integer_
   q_missing <- NA_real_
   forcing_na <- NA
   
@@ -49,9 +51,15 @@ rows <- lapply(basins, function(id) {
     nc <- nc_open(input)
     
     t <- ncvar_get(nc, "time")
+    
+    time_units <- ncatt_get(nc, "time", "units")$value
+    netcdf_time_unit <- sub(" since.*$", "", time_units)
+    
+    time_unit_valid <- identical(netcdf_time_unit, time_info$time_units)
+    
     q <- ncvar_get(nc, "q_obs")
     
-    n_days <- length(t)
+    n_timesteps <- length(t)
     q_missing <- mean(is.na(q) | q < 0) * 100
     
     forcing_na <- any(
@@ -66,10 +74,11 @@ rows <- lapply(basins, function(id) {
     input = ok_input,
     elev = file.exists(elev),
     attributes = has_att,
-    n_days = n_days,
+    n_timesteps = n_timesteps,
+    time_unit_valid = time_unit_valid,
     qobs_missing_pct = q_missing,
     forcing_has_NA = forcing_na,
-    valid = ok_input && file.exists(elev) && has_att && isFALSE(forcing_na)
+    valid = ok_input && file.exists(elev) && has_att && isTRUE(time_unit_valid) && isFALSE(forcing_na)
   )
 })
 
