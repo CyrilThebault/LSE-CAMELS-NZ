@@ -11,6 +11,8 @@ root <- Sys.getenv("ROOT", unset = if (local_machine) {
   "/work/comphyd_lab/users/cyril.thebault/ESNZ"
 })
 
+timezone = "Etc/GMT-12"
+
 experiment <- list(
   dataset        = "CAMELS-NZ",
   timestep       = "daily",
@@ -18,7 +20,7 @@ experiment <- list(
   forcing        = "VCSN",
   zDecision      = "126",
   
-  timezone = "Etc/GMT-12",
+  timezone = timezone,
 
   simulation_start = as.POSIXct("1987-01-01", tz = timezone),
   simulation_end   = as.POSIXct("2009-12-31", tz = timezone),
