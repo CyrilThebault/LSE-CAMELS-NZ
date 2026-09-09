@@ -1,7 +1,7 @@
 # CAMELS-NZ Emulator Test Case
 
 This directory contains a small, prepared test case for the
-`EmulatorForLumpedFUSE_CAMELS-NZ` workflow.
+`LSE-CAMELS-NZ` workflow.
 
 The purpose of this test case is to allow users to explore and run the
 Large-Sample Emulator (LSE) workflow without downloading and processing the
@@ -103,7 +103,7 @@ is driven by forcing data at different temporal resolutions.
 ## Using the test case
 
 The test case is intended to be copied into the root of the main
-`EmulatorForLumpedFUSE_CAMELS-NZ` repository.
+`LSE-CAMELS-NZ` repository.
 
 From the repository root:
 
@@ -209,7 +209,7 @@ For scientific experiments, users should prepare the complete set of required
 CAMELS-NZ catchments following the preparation procedure described in the main
 README.
 
-## Data and licence
+## CAMELS-NZ
 
 The test case contains a small subset of data derived from the CAMELS-NZ
 dataset.
@@ -232,3 +232,27 @@ https://doi.org/10.26021/canterburynz.28827644
 Licence:
 
 https://creativecommons.org/licenses/by/4.0/
+
+## FUSE
+
+This workflow uses the Framework for Understanding Structural Errors (FUSE)
+hydrological modelling framework.
+
+The simulations provided with this test case were generated using the
+`staging` branch of the CH-Earth FUSE implementation at commit
+`55864a2c56270bba85dd4cb998ed36665e134dec`:
+
+https://github.com/CH-Earth/fuse/tree/55864a2c56270bba85dd4cb998ed36665e134dec
+
+FUSE is distributed under the GNU General Public License version 3
+(GPL-3.0).
+
+FUSE should be cited as:
+
+Clark, M. P., Slater, A. G., Rupp, D. E., Woods, R. A., Vrugt, J. A.,
+Gupta, H. V., Wagener, T., and Hay, L. E.:
+Framework for Understanding Structural Errors (FUSE): A modular framework
+to diagnose differences between hydrological models,
+Water Resources Research, 44, W00B02, 2008.
+
+https://doi.org/10.1029/2007WR006735

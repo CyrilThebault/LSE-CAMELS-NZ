@@ -1,8 +1,9 @@
 # CAMELS-NZ lumped Large-Sample Emulator workflow
 
-This repository adapts the inherited FUSE emulator framework developed by the
-Emulator Development Working Group at the University of Calgary to a lumped
-CAMELS-NZ workflow supporting both daily and hourly time steps.
+This repository adapts the [Emulators](https://github.com/nvasquez-plac/Emulators)
+framework developed by the Emulator Development Working Group at the University
+of Calgary to a lumped CAMELS-NZ workflow supporting both daily and hourly time
+steps.
 
 A small prepared testcase is available under `testcase/` for users who want to
 explore the emulator without downloading and processing the complete CAMELS-NZ
@@ -46,13 +47,14 @@ dataset or preparing a full FUSE template.
 
 3. Review `config/attributes_used.txt`.
 
-4. Make sure you are in:
+4. Make sure you are in the repository root:
 
    ```text
-   /your/path/EmulatorForLumpedFUSE_CAMELS-NZ
+   /your/path/LSE-CAMELS-NZ
    ```
 
-5. Prepare your working environment by compiling the FUSE staging branch (see
+5. Prepare your working environment by compiling the FUSE `staging` branch
+   at the commit documented in the [FUSE](#fuse) section below (see
    https://ch-earth-fuse.readthedocs.io/en/staging/install/install_fuse/).
 
 6. Check the required R packages:
@@ -367,3 +369,51 @@ Rscript scripts/05_analysis/02_plot_kfold_performance.R \
 - For the upper-bound experiment, the same basins appear in train and test
   lists; the final test phase is still kept separate for consistent result
   collection.
+
+## CAMELS-NZ
+
+This workflow uses data from the CAMELS-NZ dataset. The prepared test case
+contains a small subset of the CAMELS-NZ data distributed with this repository.
+
+CAMELS-NZ is distributed under the Creative Commons Attribution 4.0
+International (CC BY 4.0) licence.
+
+CAMELS-NZ should be cited as:
+
+Bushra, S., Shakya, J., Cattoën, C., Fischer, S., and Pahlow, M.:
+CAMELS-NZ: hydrometeorological time series and landscape attributes for
+New Zealand, Earth System Science Data, 17, 5745–5760, 2025.
+
+https://doi.org/10.5194/essd-17-5745-2025
+
+Dataset:
+
+https://doi.org/10.26021/canterburynz.28827644
+
+Licence:
+
+https://creativecommons.org/licenses/by/4.0/
+
+## FUSE
+
+This workflow uses the Framework for Understanding Structural Errors (FUSE)
+hydrological modelling framework.
+
+The workflow was developed and tested using the `staging` branch of the
+CH-Earth FUSE implementation at commit
+`55864a2c56270bba85dd4cb998ed36665e134dec`:
+
+https://github.com/CH-Earth/fuse/tree/55864a2c56270bba85dd4cb998ed36665e134dec
+
+FUSE is distributed under the GNU General Public License version 3
+(GPL-3.0).
+
+FUSE should be cited as:
+
+Clark, M. P., Slater, A. G., Rupp, D. E., Woods, R. A., Vrugt, J. A.,
+Gupta, H. V., Wagener, T., and Hay, L. E.:
+Framework for Understanding Structural Errors (FUSE): A modular framework
+to diagnose differences between hydrological models,
+Water Resources Research, 44, W00B02, 2008.
+
+https://doi.org/10.1029/2007WR006735
