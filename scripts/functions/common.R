@@ -129,15 +129,18 @@ nkge <- function(kge) {
 # Standard project directories
 # ==============================================================================
 
-project_paths <- function(dirMain) {
+project_paths <- function(dirMain, experiment) {
+  
+  timestep <- experiment$timestep
   
   list(
     config = file.path(dirMain, "config"),
-    forcings = file.path(dirMain, "data", "forcings"),
+    forcings = file.path(dirMain, "data", "forcings", timestep),
     settings = file.path(dirMain, "data", "settings"),
     decisions = file.path(dirMain, "data", "zDecisions"),
     useful = file.path(dirMain, "data", "useful_files"),
-    iter0 = file.path(dirMain, "outputs", "iter0"),
-    experiments = file.path(dirMain, "experiments")
+    preparation = file.path(dirMain, "data", "useful_files", timestep),
+    iter0 = file.path(dirMain, "outputs", timestep, "iter0"),
+    experiments = file.path(dirMain, "experiments", timestep)
   )
 }

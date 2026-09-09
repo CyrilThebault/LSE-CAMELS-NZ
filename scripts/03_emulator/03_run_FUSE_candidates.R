@@ -26,7 +26,7 @@ source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/fuse.R"))
 
 experiment <- load_workflow_config(dirMain)
-paths <- project_paths(dirMain)
+paths <- project_paths(dirMain, experiment)
 
 suppressPackageStartupMessages(library(ncdf4))
 

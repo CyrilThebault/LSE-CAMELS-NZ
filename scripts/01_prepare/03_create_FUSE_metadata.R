@@ -18,7 +18,8 @@ dirMain <- normalizePath(args[1], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts/functions/common.R"))
 
-paths <- project_paths(dirMain)
+experiment <- load_workflow_config(dirMain)
+paths <- project_paths(dirMain, experiment)
 
 dirSettings <- paths$settings
 dirDecisions <- paths$decisions

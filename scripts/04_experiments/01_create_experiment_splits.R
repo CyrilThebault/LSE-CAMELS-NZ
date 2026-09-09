@@ -23,6 +23,7 @@ source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
 experiment <- load_workflow_config(dirMain)
+paths <- project_paths(dirMain, experiment)
 
 btab <- read_basin_table(file.path(dirMain, "config", "basins.txt"))
 ids <- as.character(btab$ID)
@@ -60,7 +61,7 @@ make_fold <- function(base, name, train, test, meta = list()) {
 # Create experiment directory
 # ==============================================================================
 
-base <- ensure_dir(file.path(dirMain, "experiments", mode))
+base <- ensure_dir(file.path(paths$experiments, mode))
 
 
 # ==============================================================================

@@ -1,33 +1,113 @@
-# CAMELS-NZ lumped daily Large-Sample Emulator workflow
+# CAMELS-NZ lumped Large-Sample Emulator workflow
 
-This refactor adapts the inherited FUSE emulator framework developed by the Emulator Development Working Group at the University of Calgary to a lumped, daily CAMELS-NZ workflow.
+This repository adapts the inherited FUSE emulator framework developed by the
+Emulator Development Working Group at the University of Calgary to a lumped
+CAMELS-NZ workflow supporting both daily and hourly time steps.
 
-A small prepared testcase is available under `testcase/` for users who want to explore the emulator without downloading and processing the complete CAMELS-NZ dataset or preparing a full FUSE template.
+A small prepared testcase is available under `testcase/` for users who want to
+explore the emulator without downloading and processing the complete CAMELS-NZ
+dataset or preparing a full FUSE template.
 
 ## 0. Setup
 
-1. Copy `config/basins.txt.example` to `config/basins.txt` and fill it with the study basins. It may be a one-column no-header ID list, or a table with a header containing a column named `ID`.
-2. Edit `config/experiment.R` to match your objectives. `ROOT` can be supplied as an environment variable.
+1. Copy `config/basins.txt.example` to `config/basins.txt` and fill it with the
+   study basins. It may be a one-column no-header ID list, or a table with a
+   header containing a column named `ID`.
+
+2. Review the experiment configurations under:
+
+   ```text
+   config/daily/experiment.R
+   config/hourly/experiment.R
+   ```
+
+   The active workflow configuration is:
+
+   ```text
+   config/experiment.R
+   ```
+
+   To select the daily experiment:
+
+   ```bash
+   cp config/daily/experiment.R config/experiment.R
+   ```
+
+   To select the hourly experiment:
+
+   ```bash
+   cp config/hourly/experiment.R config/experiment.R
+   ```
+
+   Edit the selected configuration to match your objectives. Experiment dates
+   are defined explicitly and should be consistent with the selected time step.
+
+   `ROOT` can be supplied as an environment variable.
+
 3. Review `config/attributes_used.txt`.
-4. Make sure you are in `/your/path/EmulatorForLumpedFUSE_CAMELS-NZ`
-5. Prepare your working environment by compiling FUSE staging branch (see  https://ch-earth-fuse.readthedocs.io/en/staging/install/install_fuse/)
-6. Check R packages 
-```bash
-Rscript scripts/00_check_packages.R
+
+4. Make sure you are in:
+
+   ```text
+   /your/path/EmulatorForLumpedFUSE_CAMELS-NZ
+   ```
+
+5. Prepare your working environment by compiling the FUSE staging branch (see
+   https://ch-earth-fuse.readthedocs.io/en/staging/install/install_fuse/).
+
+6. Check the required R packages:
+
+   ```bash
+   Rscript scripts/00_check_packages.R
+   ```
+
+### Time-step-specific directories
+
+The active temporal resolution is defined by `experiment$timestep` in
+`config/experiment.R`.
+
+Time-step-specific inputs and outputs are automatically separated into:
+
+```text
+data/forcings/<timestep>/
+data/useful_files/<timestep>/
+outputs/<timestep>/iter0/
+experiments/<timestep>/
+```
+
+where `<timestep>` is either `daily` or `hourly`.
+
+Files that are independent of the temporal resolution remain shared, including:
+
+```text
+data/settings/
+data/zDecisions/
+data/useful_files/attributes.RData
+data/useful_files/fuse_settings_files.RData
 ```
 
 ### Using the prepared testcase
 
-The `testcase/` directory contains a small five-catchment example with prepared FUSE inputs, configuration files and precomputed iter0 results.
+The `testcase/` directory contains a small five-catchment example with prepared
+daily and hourly FUSE inputs, configuration files, and precomputed iter0
+results.
 
 See `testcase/README.md` for detailed instructions.
 
 Depending on what you want to test:
 
-- copy the testcase `config/` and `data/` directories and start from **Step 2** to rerun the initial FUSE ensemble;
-- copy the testcase `config/`, `data/` and `outputs/iter0/` directories and start from **Step 3** to test the emulator workflow directly.
+- copy the testcase `config/` and `data/` directories and start from **Step 2**
+  to rerun the initial FUSE ensemble;
+- copy the testcase `config/`, `data/`, and `outputs/` directories and start
+  from **Step 3** to test the emulator workflow directly.
+
+After copying the testcase, select either the daily or hourly configuration
+before running the workflow.
 
 ## 1. Prepare CAMELS-NZ/FUSE inputs
+
+Select the required temporal resolution in `config/experiment.R` before running
+the preparation workflow.
 
 ```bash
 Rscript scripts/01_prepare/01_prepare_CAMELS_NZ.R ALL "$PWD"
@@ -37,26 +117,60 @@ Rscript scripts/01_prepare/04_create_CAMELS_NZ_attributes.R "$PWD"
 Rscript scripts/01_prepare/05_validate_preparation.R "$PWD"
 ```
 
+Prepared forcing and elevation-band files are written to:
+
+```text
+data/forcings/<timestep>/
+```
+
+The preparation report is written to:
+
+```text
+data/useful_files/<timestep>/preparation_report.csv
+```
+
+Shared FUSE metadata and CAMELS-NZ attribute information remain under:
+
+```text
+data/useful_files/
+```
+
 This step can be skipped when using the prepared testcase.
 
 ## 2. Generate immutable iter0 database
 
-`nIter0 = 500` is defined in `config/experiment.R`.
+The size of the initial parameter ensemble is defined by `nIter0` in
+`config/experiment.R`.
+
+The normalized Latin Hypercube parameter design depends on the experiment seed,
+basin ID, number of iterations, and active FUSE parameter set. The temporal
+resolution does not directly enter the sampling procedure.
+
+The resulting FUSE simulations are stored separately for each temporal
+resolution under:
+
+```text
+outputs/<timestep>/iter0/
+```
 
 ### On ARC HPC (University of Calgary)
 
-The provided Slurm script is configured for the ARC HPC environment at the University of Calgary, including its module system and software environment.
+The provided Slurm script is configured for the ARC HPC environment at the
+University of Calgary, including its module system and software environment.
 
-It can be adapted to other Slurm-based HPC systems by modifying the module loading, resource requests and paths as required.
+It can be adapted to other Slurm-based HPC systems by modifying the module
+loading, resource requests, and paths as required.
 
 ```bash
 export DIR_MAIN="$PWD"
+
 sbatch scripts/02_iter0/run_iter0_hpc_arc.slurm
 ```
 
 ### On a local machine
 
-A local shell script is also provided for running iter0 without Slurm. It uses GNU Parallel to distribute basin-level FUSE runs across the available cores.
+A local shell script is also provided for running iter0 without Slurm. It uses
+GNU Parallel to distribute basin-level FUSE runs across the available cores.
 
 For example, on macOS GNU Parallel can be installed with Homebrew:
 
@@ -68,20 +182,31 @@ Then run:
 
 ```bash
 export DIR_MAIN="$PWD"
-export NCORES=4
+export NCORES=5
+
 bash scripts/02_iter0/run_iter0_local.sh
 ```
 
-The number of parallel workers can be changed through `NCORES` depending on the available hardware.
+The number of parallel workers can be changed through `NCORES` depending on the
+available hardware.
 
-This step can be skipped when using the precomputed `outputs/iter0/` distributed with the testcase.
+This step can be skipped when using the precomputed
+`outputs/<timestep>/iter0/` distributed with the testcase.
 
 ## 3. Create experiment splits
+
+Experiment directories are created under the active temporal resolution:
+
+```text
+experiments/<timestep>/
+```
+
+For example:
 
 ```bash
 Rscript scripts/04_experiments/01_create_experiment_splits.R upper_bound "$PWD"
 Rscript scripts/04_experiments/01_create_experiment_splits.R loo "$PWD"
-Rscript scripts/04_experiments/01_create_experiment_splits.R kfold "$PWD" 5
+Rscript scripts/04_experiments/01_create_experiment_splits.R kfold "$PWD" 2
 ```
 
 Available experiment modes are:
@@ -90,21 +215,56 @@ Available experiment modes are:
 - `loo`: each basin is held out once;
 - `kfold`: basins are randomly divided into K folds.
 
-Cluster-based cross-validation is planned but is not yet fully implemented. The split script already supports a cluster column, but no `hydro_cluster` classification is currently generated by the workflow.
+For example, with the daily configuration active, a 2-fold experiment is
+created under:
+
+```text
+experiments/daily/kfold/
+```
+
+With the hourly configuration active, it is created under:
+
+```text
+experiments/hourly/kfold/
+```
+
+Cluster-based cross-validation is planned but is not yet fully implemented. The
+split script already supports a cluster column, but no `hydro_cluster`
+classification is currently generated by the workflow.
 
 ## 4. Run one fold
 
-The fold workflow trains on `train_basins.txt`, refines the emulator only with those training basins, then searches and runs FUSE for `test_basins.txt` after the final emulator is frozen.
+The fold workflow trains on `train_basins.txt`, refines the emulator only with
+those training basins, then searches and runs FUSE for `test_basins.txt` after
+the final emulator is frozen.
 
 Test-basin FUSE results never feed back into model training.
 
+Make sure that `config/experiment.R` corresponds to the same temporal
+resolution as the experiment directory being run.
+
 ### On ARC HPC (University of Calgary)
 
-The provided Slurm script is configured for ARC HPC. As for the iter0 script, it can be adapted to other Slurm-based systems by modifying the HPC-specific configuration.
+The provided Slurm script is configured for ARC HPC. As for the iter0 script,
+it can be adapted to other Slurm-based systems by modifying the HPC-specific
+configuration.
+
+For a daily experiment:
 
 ```bash
 export DIR_MAIN="$PWD"
-export EXPERIMENT_DIR="$PWD/experiments/kfold/fold_01"
+export EXPERIMENT_DIR="$PWD/experiments/daily/kfold/fold_01"
+export ZDECISION=126
+export NREFINE=2
+
+sbatch scripts/03_emulator/run_LSE_fold_hpc_arc.slurm
+```
+
+For an hourly experiment, use the corresponding hourly experiment directory:
+
+```bash
+export DIR_MAIN="$PWD"
+export EXPERIMENT_DIR="$PWD/experiments/hourly/kfold/fold_01"
 export ZDECISION=126
 export NREFINE=2
 
@@ -113,11 +273,13 @@ sbatch scripts/03_emulator/run_LSE_fold_hpc_arc.slurm
 
 ### On a local machine
 
-The equivalent workflow can be run locally with GNU Parallel:
+The equivalent workflow can be run locally with GNU Parallel.
+
+For example, for a daily experiment:
 
 ```bash
 export DIR_MAIN="$PWD"
-export EXPERIMENT_DIR="$PWD/experiments/kfold/fold_01"
+export EXPERIMENT_DIR="$PWD/experiments/daily/kfold/fold_01"
 export ZDECISION=126
 export NREFINE=2
 export NCORES=4
@@ -125,16 +287,83 @@ export NCORES=4
 bash scripts/03_emulator/run_LSE_fold_local.sh
 ```
 
-## 5. Collect results
+For an hourly experiment, set:
 
 ```bash
-Rscript scripts/05_analysis/01_collect_results.R "$PWD/experiments/kfold" 126 "$PWD"
+export EXPERIMENT_DIR="$PWD/experiments/hourly/kfold/fold_01"
+```
+
+before running the same script.
+
+## 5. Collect results
+
+Results are collected separately for each temporal resolution.
+
+For daily:
+
+```bash
+Rscript scripts/05_analysis/01_collect_results.R \
+  "$PWD/experiments/daily/kfold" \
+  126 \
+  "$PWD"
+```
+
+For hourly:
+
+```bash
+Rscript scripts/05_analysis/01_collect_results.R \
+  "$PWD/experiments/hourly/kfold" \
+  126 \
+  "$PWD"
+```
+
+The resulting summary is written inside the corresponding experiment
+directory.
+
+## 6. Plot k-fold performance
+
+After collecting the results, k-fold performance figures can be generated with:
+
+```bash
+Rscript scripts/05_analysis/02_plot_kfold_performance.R \
+  "$PWD/experiments/daily/kfold" \
+  "$PWD"
+```
+
+or, for the hourly experiment:
+
+```bash
+Rscript scripts/05_analysis/02_plot_kfold_performance.R \
+  "$PWD/experiments/hourly/kfold" \
+  "$PWD"
 ```
 
 ## Important implementation notes
 
-- `outputs/iter0` is shared by every experiment and should not be regenerated for cross-validation.
-- Experiment-specific models, candidate sets and FUSE results are stored under `experiments/<experiment>/<fold>/outputs/`.
-- Categorical attribute levels are defined from the complete CAMELS-NZ attribute database so that valid categories absent from an individual training fold remain usable for held-out basins.
-- The same numerical design-matrix recipe is stored with the emulator and reused during prediction.
-- For the upper-bound experiment, the same basins appear in train and test lists; the final test phase is still kept separate for consistent result collection.
+- `outputs/<timestep>/iter0/` is shared by all experiments at a given temporal
+  resolution and should not be regenerated for individual cross-validation
+  experiments.
+
+- Daily and hourly iter0 databases are stored separately, even when they use
+  the same normalized parameter samples, because the corresponding FUSE
+  simulations use forcing data at different temporal resolutions.
+
+- Experiment-specific models, candidate sets, and FUSE results are stored under
+  `experiments/<timestep>/<experiment>/<fold>/outputs/`.
+
+- Daily and hourly experiments can coexist in the same repository without
+  overwriting their forcing data, iter0 simulations, or experiment results.
+
+- `data/settings/`, `data/zDecisions/`, CAMELS-NZ attributes, and FUSE parameter
+  metadata are shared between temporal resolutions.
+
+- Categorical attribute levels are defined from the complete CAMELS-NZ
+  attribute database so that valid categories absent from an individual
+  training fold remain usable for held-out basins.
+
+- The same numerical design-matrix recipe is stored with the emulator and
+  reused during prediction.
+
+- For the upper-bound experiment, the same basins appear in train and test
+  lists; the final test phase is still kept separate for consistent result
+  collection.

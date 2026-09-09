@@ -19,7 +19,7 @@ dirMain <- normalizePath(args[1], mustWork = TRUE)
 source(file.path(dirMain, "scripts/functions/common.R"))
 
 experiment <- load_workflow_config(dirMain)
-paths <- project_paths(dirMain)
+paths <- project_paths(dirMain, experiment)
 
 dir_attributes <- file.path(experiment$paths$camels_nz, "CAMELS_NZ_Catchment_Atrributes")
 

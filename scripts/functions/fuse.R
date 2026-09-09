@@ -38,7 +38,7 @@ get_parameter_info <- function(fuse_settings_files, zDecision) {
 
 prepare_fuse_workspace <- function(dirMain, work_dir, basinID, zDecision, experiment) {
   
-  paths <- project_paths(dirMain)
+  paths <- project_paths(dirMain, experiment)
   time_info <- get_timestep_info(experiment)
   
   ensure_dir(work_dir)
@@ -176,7 +176,7 @@ read_qobs <- function(input_file, experiment) {
   time <- nc_time_to_posixct(time_raw, units, experiment)
   
   data.frame(time = time, 
-             qObs_mmd = ncdf4::ncvar_get(nc, "q_obs"))
+             qObs = ncdf4::ncvar_get(nc, "q_obs"))
 }
 
 
@@ -202,17 +202,17 @@ compute_flow_metrics <- function(qsim, qobs, basinID, periods) {
     rows <- which(
       df$time >= ti &
         df$time <= tf &
-        !is.na(df$qObs_mmd) &
-        df$qObs_mmd >= 0 &
-        !is.na(df$qSim_mmd)
+        !is.na(df$qObs) &
+        df$qObs >= 0 &
+        !is.na(df$qSim)
     )
     
     if (length(rows) < 10L) {
       return(NULL)
     }
     
-    sim <- df$qSim_mmd[rows]
-    obs <- df$qObs_mmd[rows]
+    sim <- df$qSim[rows]
+    obs <- df$qObs[rows]
     
     alpha <- stats::sd(sim) / stats::sd(obs)
     beta <- mean(sim) / mean(obs)
@@ -390,8 +390,20 @@ run_fuse <- function(params_normalized, basinID, zDecision, fuse_settings_files,
   
   time <- nc_time_to_posixct(time_raw, units, experiment)
   
+  time_info <- get_timestep_info(experiment)
+  
+  # FUSE streamflow outputs are always expressed in mm/day.
+  qsim_values_mmd <- ncdf4::ncvar_get(nc, "q_routed")
+  qsim_units <- ncdf4::ncatt_get(nc, "q_routed", "units")$value
+  
+  if (qsim_units != "mm/day") {
+    stop("Unexpected FUSE discharge units: ", qsim_units,". Expected 'mm/day'.")
+  }
+  
+  qsim_values <- qsim_values_mmd * time_info$seconds_per_timestep / 86400
+  
   qsim <- data.frame(time = time,
-                     qSim_mmd = ncdf4::ncvar_get(nc, "q_routed"))
+                     qSim = qsim_values)
   
   metrics <- compute_flow_metrics(qsim, qObs, basinID, periods)
   

@@ -46,7 +46,7 @@ suppressPackageStartupMessages({
 # ==============================================================================
 
 experiment <- load_workflow_config(dirMain)
-paths <- project_paths(dirMain)
+paths <- project_paths(dirMain, experiment)
 
 train_ids <- read_basin_ids(file.path(experiment_dir, "train_basins.txt"))
 attributes <- load_rdata_single(file.path(paths$useful, "attributes.RData"))
@@ -184,7 +184,7 @@ for (ml in experiment$emulators) {
   # Build the emulator database from iter0 and, when applicable, parameter sets
   # evaluated during previous refinement steps.
   dat <- build_emulator_dataset(
-    dirMain, experiment_dir, train_ids, zDecision, iStep, ml,
+    paths, experiment_dir, train_ids, zDecision, iStep, ml,
     attributes, attribute_names, info$names, experiment$nCandidates
   )
   

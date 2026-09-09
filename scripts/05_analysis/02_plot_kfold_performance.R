@@ -79,7 +79,7 @@ if (!nrow(plot_data)) {
 # Output
 # ==============================================================================
 
-plot_dir <- ensure_dir(file.path(dirMain, "plots", basename(exp_root)))
+plot_dir <- ensure_dir(file.path(dirMain, "plots", experiment$timestep, basename(exp_root)))
 
 save_figure <- function(plot, filename, width = 7, height = 5) {
   

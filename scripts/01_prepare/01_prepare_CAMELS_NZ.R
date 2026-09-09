@@ -25,7 +25,7 @@ source(file.path(dirMain, "scripts/functions/basins.R"))
 
 experiment <- load_workflow_config(dirMain)
 time_info <- get_timestep_info(experiment)
-paths <- project_paths(dirMain)
+paths <- project_paths(dirMain, experiment)
 
 suppressPackageStartupMessages(library(ncdf4))
 

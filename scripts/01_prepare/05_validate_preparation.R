@@ -21,7 +21,7 @@ source(file.path(dirMain, "scripts/functions/basins.R"))
 
 experiment <- load_workflow_config(dirMain)
 time_info <- get_timestep_info(experiment)
-paths <- project_paths(dirMain)
+paths <- project_paths(dirMain, experiment)
 
 suppressPackageStartupMessages(library(ncdf4))
 
@@ -136,7 +136,9 @@ write.csv(
 
 report <- do.call(rbind, rows)
 
-write.csv(report, file.path(paths$useful, "preparation_report.csv"), row.names = FALSE)
+ensure_dir(paths$preparation)
+
+write.csv(report, file.path(paths$preparation, "preparation_report.csv"), row.names = FALSE)
 
 print(report)
 

@@ -2,44 +2,27 @@
 # Read iter0 results for one basin
 #
 # The current workflow stores iter0 as a list containing normalized parameters
-# and calibration KGE values. A backward-compatible branch is kept for the older
-# data-frame format used in earlier versions of the workflow.
+# and calibration KGE values.
 # ==============================================================================
 
-read_iter0_for_basin <- function(dirMain, basinID, zDecision, parameter_names) {
+read_iter0_for_basin <- function(paths, basinID, zDecision, parameter_names) {
   
-  base <- file.path(dirMain, "outputs", "iter0", paste0("zDecision_", zDecision), basinID)
-  f <- file.path(base, paste0("iter0_", basinID, "_zDec_", zDecision, ".RData"))
-  
-  # Backward-compatible path used by earlier versions of the workflow.
-  if (!file.exists(f)) {
-    f <- file.path(
-      dirMain, "outputs", "iter0", paste0("zDecision_", zDecision),
-      paste0("iter0_", basinID, "_zDec_", zDecision, ".RData")
-    )
-  }
+  f <- file.path(
+    paths$iter0,
+    paste0("zDecision_", zDecision),
+    basinID,
+    paste0("iter0_", basinID, "_zDec_", zDecision, ".RData")
+  )
   
   x <- load_rdata_single(f)
-  colsX <- paste0("p", seq_along(parameter_names))
   
-  if (is.list(x) && !is.data.frame(x) && !is.null(x$params_normalized)) {
-    
-    p <- as.data.frame(x$params_normalized)
-    names(p) <- colsX
-    p$KGE <- x$KGE_calibration
-    
-  } else if (is.data.frame(x) && "lhsParams" %in% names(x)) {
-    
-    p <- do.call(rbind, lapply(x$lhsParams, function(v) as.numeric(v)))
-    p <- as.data.frame(p)
-    names(p) <- colsX
-    p$KGE <- x$KGEc
-    
-  } else {
-    
+  if (!is.list(x) || is.data.frame(x) || is.null(x$params_normalized)) {
     stop("Unrecognized iter0 format for basin ", basinID)
   }
   
+  p <- as.data.frame(x$params_normalized)
+  names(p) <- paste0("p", seq_along(parameter_names))
+  p$KGE <- x$KGE_calibration
   p$source_step <- -1L
   
   p
@@ -55,7 +38,7 @@ read_iter0_for_basin <- function(dirMain, basinID, zDecision, parameter_names) {
 # sets.
 # ==============================================================================
 
-build_emulator_dataset <- function(dirMain, experiment_dir, basin_ids, zDecision, iStep,
+build_emulator_dataset <- function(paths, experiment_dir, basin_ids, zDecision, iStep,
                                    emulator_type, attributes, attribute_names,
                                    parameter_names, nCandidates) {
   
@@ -75,7 +58,7 @@ build_emulator_dataset <- function(dirMain, experiment_dir, basin_ids, zDecision
     att <- attributes[row, attribute_names, drop = FALSE]
     
     # Start from the immutable initial FUSE ensemble.
-    p <- read_iter0_for_basin(dirMain, id, zDecision, parameter_names)
+    p <- read_iter0_for_basin(paths, id, zDecision, parameter_names)
     
     # Add successful candidates evaluated during earlier refinement steps.
     if (iStep > 0L) {

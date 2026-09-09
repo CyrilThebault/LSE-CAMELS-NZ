@@ -35,7 +35,7 @@ source(file.path(dirMain, "scripts/functions/fuse.R"))
 source(file.path(dirMain, "scripts/functions/emulator.R"))
 
 experiment <- load_workflow_config(dirMain)
-paths <- project_paths(dirMain)
+paths <- project_paths(dirMain, experiment)
 
 suppressPackageStartupMessages({
   library(GA)
