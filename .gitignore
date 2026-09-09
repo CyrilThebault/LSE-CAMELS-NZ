@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# Local CAMELS-NZ workflow files
+config/basins.txt
+data/
+experiments/
+outputs/
+plots/
