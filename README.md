@@ -63,6 +63,12 @@ dataset or preparing a full FUSE template.
    Rscript scripts/00_check_packages.R
    ```
 
+7. On ARC HPC, create the workflow log directories before submitting jobs:
+
+   ```bash
+   mkdir -p logs/prepare logs/iter0 logs/emulator
+   ```
+
 ### Time-step-specific directories
 
 The active temporal resolution is defined by `experiment$timestep` in

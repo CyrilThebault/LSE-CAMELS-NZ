@@ -6,6 +6,8 @@
 #SBATCH --time=12:00:00
 #SBATCH -J lse_fold
 #SBATCH --mail-type=FAIL
+#SBATCH --output=logs/emulator/%x_%j.log
+#SBATCH --error=logs/emulator/%x_%j.log
 
 # Stop immediately on errors, unset variables and failed pipeline commands.
 set -euo pipefail

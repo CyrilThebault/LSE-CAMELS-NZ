@@ -6,6 +6,8 @@
 #SBATCH --time=12:00:00
 #SBATCH -J lse_iter0
 #SBATCH --mail-type=FAIL
+#SBATCH --output=logs/iter0/%x_%j.log
+#SBATCH --error=logs/iter0/%x_%j.log
 
 # Stop on errors, unset variables and failed commands in pipelines.
 set -euo pipefail

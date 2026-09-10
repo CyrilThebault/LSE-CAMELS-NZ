@@ -3,6 +3,8 @@
 #SBATCH --time=00:10:00
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2G
+#SBATCH --output=logs/prepare/%x_%A_%a.log
+#SBATCH --error=logs/prepare/%x_%A_%a.log
 
 # Stop on errors, unset variables and failed pipeline commands.
 set -euo pipefail
