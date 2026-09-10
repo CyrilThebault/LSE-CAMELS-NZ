@@ -131,7 +131,7 @@ export DIR_MAIN="$PWD"
 NBASINS=$(wc -l < "$DIR_MAIN/config/basins.txt")
 
 sbatch \
-  --array=1-"$NBASINS"%25 \
+  --array=1-"$NBASINS" \
   --export=ALL,DIR_MAIN="$DIR_MAIN" \
   scripts/01_prepare/01_prepare_CAMELS_NZ_hpc_arc.slurm
 ```
