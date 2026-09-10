@@ -12,8 +12,8 @@ dataset or preparing a full FUSE template.
 ## 0. Setup
 
 1. Copy `config/basins.txt.example` to `config/basins.txt` and fill it with the
-   study basins. It may be a one-column no-header ID list, or a table with a
-   header containing a column named `ID`.
+   study basins. The file must contain one CAMELS-NZ `Station_ID` per line,
+   with no header, additional columns, empty lines, or duplicate IDs.
 
 2. Review the experiment configurations under:
 
@@ -111,8 +111,55 @@ before running the workflow.
 Select the required temporal resolution in `config/experiment.R` before running
 the preparation workflow.
 
+The CAMELS-NZ forcing and elevation-band files are prepared independently for
+each basin.
+
+### On ARC HPC (University of Calgary)
+
+The provided Slurm script uses a job array to prepare basins independently on
+ARC. The number of array tasks is determined from `config/basins.txt`.
+
+```bash
+export DIR_MAIN="$PWD"
+
+NBASINS=$(wc -l < "$DIR_MAIN/config/basins.txt")
+
+sbatch \
+  --array=1-"$NBASINS"%25 \
+  --export=ALL,DIR_MAIN="$DIR_MAIN" \
+  scripts/01_prepare/01_prepare_CAMELS_NZ_hpc_arc.slurm
+```
+
+The `%25` limit allows at most 25 basin-preparation jobs to run simultaneously
+and can be adjusted depending on the available resources.
+
+### On a local machine
+
+A local shell script uses GNU Parallel to prepare multiple basins
+simultaneously. For example:
+
+```bash
+export DIR_MAIN="$PWD"
+export NCORES=5
+
+bash scripts/01_prepare/01_prepare_CAMELS_NZ_local.sh
+```
+
+The number of parallel workers can be changed through `NCORES` depending on the
+available hardware.
+
+For a sequential run, the preparation script can also be called directly:
+
 ```bash
 Rscript scripts/01_prepare/01_prepare_CAMELS_NZ.R ALL "$PWD"
+```
+
+### Complete input preparation
+
+Once the basin-level preparation is complete, generate the shared FUSE settings,
+metadata, CAMELS-NZ attributes, and validate the prepared inputs:
+
+```bash
 Rscript scripts/01_prepare/02_prepare_FUSE_settings.R "$PWD"
 Rscript scripts/01_prepare/03_create_FUSE_metadata.R "$PWD"
 Rscript scripts/01_prepare/04_create_CAMELS_NZ_attributes.R "$PWD"

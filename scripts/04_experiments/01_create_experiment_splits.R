@@ -25,8 +25,7 @@ source(file.path(dirMain, "scripts/functions/basins.R"))
 experiment <- load_workflow_config(dirMain)
 paths <- project_paths(dirMain, experiment)
 
-btab <- read_basin_table(file.path(dirMain, "config", "basins.txt"))
-ids <- as.character(btab$ID)
+ids <- read_basin_ids(file.path(dirMain, "config", "basins.txt"))
 
 set.seed(experiment$seed)
 

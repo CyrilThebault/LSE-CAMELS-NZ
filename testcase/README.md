@@ -46,7 +46,8 @@ testcase/
 The configuration files define the small experiment distributed with the test
 case:
 
-- `basins.txt`: catchments included in the test case;
+- `basins.txt`: catchments included in the test case, with one CAMELS-NZ
+  `Station_ID` per line and no header;
 - `attributes_used.txt`: CAMELS-NZ catchment attributes used as emulator
   predictors;
 - `daily/experiment.R`: configuration for the daily experiment;
