@@ -236,16 +236,19 @@ outputs/<timestep>/iter0/
 
 ### On ARC HPC (University of Calgary)
 
-The provided Slurm script is configured for the ARC HPC environment at the
-University of Calgary, including its module system and software environment.
-
-It can be adapted to other Slurm-based HPC systems by modifying the module
-loading, resource requests, and paths as required.
+The provided Slurm script uses a job array to run the initial FUSE ensemble
+independently for each basin on ARC. The number of array tasks is determined
+from `config/basins.txt`.
 
 ```bash
 export DIR_MAIN="$PWD"
 
-sbatch scripts/02_iter0/run_iter0_hpc_arc.slurm
+NBASINS=$(wc -l < "$DIR_MAIN/config/basins.txt")
+
+sbatch \
+  --array=1-"$NBASINS" \
+  --export=ALL,DIR_MAIN="$DIR_MAIN" \
+  scripts/02_iter0/run_iter0_hpc_arc.slurm
 ```
 
 ### On a local machine

@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=10
+#SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=4000
 #SBATCH --time=12:00:00
 #SBATCH -J lse_iter0
 #SBATCH --mail-type=FAIL
-#SBATCH --output=logs/iter0/%x_%j.log
-#SBATCH --error=logs/iter0/%x_%j.log
+#SBATCH --output=logs/iter0/%x_%A_%a.log
+#SBATCH --error=logs/iter0/%x_%A_%a.log
 
 # Stop on errors, unset variables and failed commands in pipelines.
 set -euo pipefail
@@ -31,7 +31,9 @@ module load r/4.4.1
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
+export OMP_THREAD_LIMIT=1
 
+ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:?This script must be submitted as a Slurm job array}"
 
 # ==============================================================================
 # Workflow configuration
@@ -41,14 +43,32 @@ DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
 
 ZDECISION="${ZDECISION:-$(Rscript -e "source('${DIR_MAIN}/config/experiment.R'); cat(experiment\$zDecision)")}"
 
-NCORES="${SLURM_CPUS_PER_TASK:-10}"
+BASIN_FILE="$DIR_MAIN/config/basins.txt"
 
+if [[ ! -f "$BASIN_FILE" ]]; then
+  echo "Missing basin file: $BASIN_FILE" >&2
+  exit 1
+fi
+
+# ==============================================================================
+# Basin selection
+# ==============================================================================
+
+BASIN_ID="$(sed -n "${ARRAY_TASK_ID}p" "$BASIN_FILE")"
+
+if [[ -z "$BASIN_ID" ]]; then
+  echo "No basin found for array task ${ARRAY_TASK_ID}" >&2
+  exit 1
+fi
+
+echo "Array task: ${ARRAY_TASK_ID}"
+echo "Running iter0 for basin: ${BASIN_ID}"
 
 # ==============================================================================
 # Temporary workspace
 # ==============================================================================
 
-TMP_BASE="${TMPDIR:-/tmp}/lse_iter0_${SLURM_JOB_ID}"
+TMP_BASE="${TMPDIR:-/tmp}/lse_iter0_${SLURM_ARRAY_JOB_ID}_${ARRAY_TASK_ID}"
 mkdir -p "$TMP_BASE"
 
 # ==============================================================================
@@ -58,4 +78,4 @@ mkdir -p "$TMP_BASE"
 # concurrent model runs.
 # ==============================================================================
 
-parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/02_iter0/01_run_iter0.R" {} "$ZDECISION" "$TMP_BASE/{}" "$DIR_MAIN" :::: "$DIR_MAIN/config/basins.txt"
+Rscript "$DIR_MAIN/scripts/02_iter0/01_run_iter0.R" "$BASIN_ID" "$ZDECISION" "$TMP_BASE" "$DIR_MAIN"
