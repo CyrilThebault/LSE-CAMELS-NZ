@@ -305,11 +305,13 @@ Cluster-based cross-validation is planned but is not currently implemented.
 
 ## 4. Run one fold
 
-The fold workflow trains on `train_basins.txt`, refines the emulator only with
-those training basins, then searches and runs FUSE for `test_basins.txt` after
-the final emulator is frozen.
+The fold workflow trains on `train_basins.txt` and refines the emulator only
+with those training basins. The current emulator is evaluated on
+`test_basins.txt` after the initial fit (step 0) and after each refinement step
+by searching the parameter space and running FUSE.
 
-Test-basin FUSE results never feed back into model training.
+Test-basin FUSE results are used only for evaluation and never feed back into
+model training.
 
 Make sure that `config/experiment.R` corresponds to the same temporal
 resolution as the experiment directory being run.
@@ -388,8 +390,9 @@ Rscript scripts/05_analysis/01_collect_results.R \
   "$PWD"
 ```
 
-The resulting summary is written inside the corresponding experiment
-directory.
+The resulting `results_summary.csv` is written inside the corresponding
+experiment directory. It contains one selected candidate per fold, test basin,
+emulator, and refinement step.
 
 ## 6. Plot k-fold performance
 
@@ -408,6 +411,12 @@ Rscript scripts/05_analysis/02_plot_kfold_performance.R \
   "$PWD/experiments/hourly/kfold" \
   "$PWD"
 ```
+
+The standard k-fold performance figures and `kfold_performance_summary.csv`
+summarize the final refinement step. Performance across all available
+refinement steps is additionally written to
+`kfold_performance_by_step.csv` and visualized in
+`05_kgee_by_refinement_step`.
 
 ## Important implementation notes
 
@@ -436,8 +445,8 @@ Rscript scripts/05_analysis/02_plot_kfold_performance.R \
   reused during prediction.
 
 - For the upper-bound experiment, the same basins appear in train and test
-  lists; the final test phase is still kept separate for consistent result
-  collection.
+  lists; test evaluations are still kept separate from emulator training for
+  consistent result collection.
 
 ## CAMELS-NZ
 

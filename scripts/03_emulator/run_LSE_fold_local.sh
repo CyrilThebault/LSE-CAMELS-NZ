@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 # Stop immediately on errors, unset variables and failed pipeline commands.
 set -euo pipefail
 
@@ -33,17 +35,23 @@ mkdir -p "$TMP_BASE"
 # ==============================================================================
 # Initial emulator
 #
-# Step 0 is trained only from the immutable iter0 FUSE ensemble.
+# Step 0 is trained only from the immutable iter0 FUSE ensemble. It is then
+# evaluated on the held-out basins before any refinement. Test-basin results are
+# used only for evaluation and never feed back into model training.
 # ==============================================================================
 
 Rscript "$DIR_MAIN/scripts/03_emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" 0 "$NCORES" "$DIR_MAIN"
 
+parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
+
+parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$TMP_BASE/test_{}" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
 
 # ==============================================================================
 # Iterative refinement
 #
 # Candidate generation, FUSE evaluation and emulator retraining use TRAIN basins
-# only. Test basins must never feed information back into the emulator.
+# only. After each retraining step, the updated emulator is evaluated on the
+# held-out basins. Test basins never feed information back into the emulator.
 # ==============================================================================
 
 for ((step = 0; step < NREFINE; step++)); do
@@ -56,19 +64,9 @@ for ((step = 0; step < NREFINE; step++)); do
 
   Rscript "$DIR_MAIN/scripts/03_emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" "$next" "$NCORES" "$DIR_MAIN"
 
+  # Evaluate the newly refined emulator on test basins.
+  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
+
+  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$TMP_BASE/test_{}" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
+
 done
-
-
-# ==============================================================================
-# Final evaluation
-#
-# The final emulator is applied to the held-out basins. These FUSE evaluations
-# are used only to assess regionalisation performance and never feed back into
-# model training.
-# ==============================================================================
-
-FINAL_STEP="$NREFINE"
-
-parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$FINAL_STEP" test "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
-
-parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$FINAL_STEP" test "$TMP_BASE/test_{}" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
