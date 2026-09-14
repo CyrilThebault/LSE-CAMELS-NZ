@@ -4,16 +4,16 @@
 # Create experiment splits for regionalisation experiments
 #
 # Supported modes:
-#   - upper_bound: all basins are used for both training and evaluation
+#   - allseen: all basins are used for both training and evaluation
 #   - loo:         one basin is held out at a time
 #   - kfold:       basins are randomly divided into K folds
-#   - cluster:     one hydrological cluster is held out at a time
+#   - cluster:     one hydrological cluster is held out at a time (in development)
 # ==============================================================================
 
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) < 2L) {
-  stop("Usage: Rscript 01_create_experiment_splits.R <upper_bound|loo|kfold|cluster> <dirMain> [K|cluster_column]")
+  stop("Usage: Rscript 01_create_experiment_splits.R <allseen|loo|kfold> <dirMain> [K]")
 }
 
 mode <- args[1]
@@ -64,13 +64,13 @@ base <- ensure_dir(file.path(paths$experiments, mode))
 
 
 # ==============================================================================
-# Upper bound
+# All seen
 #
-# All basins are used for both training and evaluation. This is not a
-# regionalisation experiment, but provides the optimistic upper bound.
+# All basins are used for both training and evaluation. This experiment provides
+# a reference for performance without spatial transfer.
 # ==============================================================================
 
-if (mode == "upper_bound") {
+if (mode == "allseen") {
   
   make_fold(base, "all_basins", ids, ids)
   

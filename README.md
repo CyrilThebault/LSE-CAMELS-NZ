@@ -280,14 +280,14 @@ experiments/<timestep>/
 For example:
 
 ```bash
-Rscript scripts/04_experiments/01_create_experiment_splits.R upper_bound "$PWD"
+Rscript scripts/04_experiments/01_create_experiment_splits.R allseen "$PWD"
 Rscript scripts/04_experiments/01_create_experiment_splits.R loo "$PWD"
 Rscript scripts/04_experiments/01_create_experiment_splits.R kfold "$PWD" 2
 ```
 
 Available experiment modes are:
 
-- `upper_bound`: all basins are used for training and final evaluation;
+- `allseen`: all basins are used for training and final evaluation;
 - `loo`: each basin is held out once;
 - `kfold`: basins are randomly divided into K folds.
 
@@ -325,7 +325,27 @@ The provided Slurm script is configured for ARC HPC. As for the iter0 script,
 it can be adapted to other Slurm-based systems by modifying the HPC-specific
 configuration.
 
-For a daily experiment:
+To submit all splits of an experiment, use `submit_LSE_experiment_hpc_arc.sh`.
+For example, for a k-fold experiment:
+
+```bash
+bash scripts/03_emulator/submit_LSE_experiment_hpc_arc.sh "$PWD" kfold
+```
+
+The first argument is the project root directory and the second argument is the
+experiment name. Supported experiments include `allseen`, `loo` and `kfold`.
+
+The active temporal resolution is read from `config/experiment.R`. Experiment
+splits are therefore discovered under: `experiments/<timestep>/<experiment>/`.
+
+The submission script discovers all valid split directories containing both
+`train_basins.txt` and `test_basins.txt` and submits one Slurm job per split.
+
+`ZDECISION` and `NREFINE` are read from `config/experiment.R` by default and
+can be overridden through environment variables if required.
+
+To submit a single split manually, set the project and split directories
+explicitly. For example:
 
 ```bash
 export DIR_MAIN="$PWD"
@@ -333,19 +353,11 @@ export EXPERIMENT_DIR="$PWD/experiments/daily/kfold/fold_01"
 export ZDECISION=126
 export NREFINE=2
 
-sbatch scripts/03_emulator/run_LSE_fold_hpc_arc.slurm
+sbatch scripts/03_emulator/run_LSE_split_hpc_arc.slurm
 ```
 
-For an hourly experiment, use the corresponding hourly experiment directory:
-
-```bash
-export DIR_MAIN="$PWD"
-export EXPERIMENT_DIR="$PWD/experiments/hourly/kfold/fold_01"
-export ZDECISION=126
-export NREFINE=2
-
-sbatch scripts/03_emulator/run_LSE_fold_hpc_arc.slurm
-```
+For an hourly experiment, use the corresponding directory under
+`experiments/hourly/`.
 
 ### On a local machine
 
@@ -360,7 +372,7 @@ export ZDECISION=126
 export NREFINE=2
 export NCORES=4
 
-bash scripts/03_emulator/run_LSE_fold_local.sh
+bash scripts/03_emulator/run_LSE_split_local.sh
 ```
 
 For an hourly experiment, set:
@@ -447,7 +459,7 @@ refinement steps is additionally written to
 - The same numerical design-matrix recipe is stored with the emulator and
   reused during prediction.
 
-- For the upper-bound experiment, the same basins appear in train and test
+- For the `allseen` experiment, the same basins appear in train and test
   lists; test evaluations are still kept separate from emulator training for
   consistent result collection.
 

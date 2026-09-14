@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=11
-#SBATCH --mem-per-cpu=4000
-#SBATCH --time=12:00:00
+#SBATCH --cpus-per-task=48
+#SBATCH --mem-per-cpu=1500
+#SBATCH --time=3-00:00:00
 #SBATCH -J lse_fold
 #SBATCH --mail-type=FAIL
 #SBATCH --output=logs/emulator/%x_%j.log
