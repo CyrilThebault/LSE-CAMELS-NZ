@@ -409,29 +409,112 @@ The resulting `results_summary.csv` is written inside the corresponding
 experiment directory. It contains one selected candidate per fold, test basin,
 emulator, and refinement step.
 
-## 6. Plot k-fold performance
+## 6. Plot experiment performance
 
-After collecting the results, k-fold performance figures can be generated with:
+After collecting the results, performance figures can be generated for any
+experiment type with:
 
 ```bash
-Rscript scripts/05_analysis/02_plot_kfold_performance.R \
-  "$PWD/experiments/daily/kfold" \
+Rscript scripts/05_analysis/02_plot_experiment_performance.R \
+  "$PWD/experiments/<timestep>/<experiment>" \
   "$PWD"
 ```
 
-or, for the hourly experiment:
+For example:
 
 ```bash
-Rscript scripts/05_analysis/02_plot_kfold_performance.R \
+Rscript scripts/05_analysis/02_plot_experiment_performance.R \
   "$PWD/experiments/hourly/kfold" \
   "$PWD"
 ```
 
-The standard k-fold performance figures and `kfold_performance_summary.csv`
-summarize the final refinement step. Performance across all available
-refinement steps is additionally written to
-`kfold_performance_by_step.csv` and visualized in
-`05_kgee_by_refinement_step`.
+or:
+
+```bash
+Rscript scripts/05_analysis/02_plot_experiment_performance.R \
+  "$PWD/experiments/hourly/allseen" \
+  "$PWD"
+```
+
+The script summarizes the final refinement step and writes its outputs under:
+
+```text
+plots/<timestep>/<experiment>/
+```
+
+The standard outputs include:
+
+- KGE distribution by emulator;
+- KGE empirical cumulative distribution function;
+- KGE by fold when multiple folds are present;
+- basin-wise KGE;
+- KGE evolution across refinement steps;
+- spatial distribution of final-step evaluation-period KGE;
+- `performance_summary.csv`;
+- `performance_by_step.csv`.
+
+Spatial plots use the New Zealand boundary and CAMELS-NZ station locations
+stored under:
+
+```text
+shapefiles/
+```
+
+The spatial plotting dependencies are `sf` and `viridisLite`, both checked by
+`scripts/00_check_packages.R`.
+
+## 7. Compare experiment performance
+
+Two or more experiments can be compared with:
+
+```bash
+Rscript scripts/05_analysis/03_compare_experiment_performance.R \
+  "$PWD" \
+  "$PWD/experiments/hourly/kfold" \
+  "$PWD/experiments/hourly/allseen"
+```
+
+Experiments from different temporal resolutions can also be compared. For
+example:
+
+```bash
+Rscript scripts/05_analysis/03_compare_experiment_performance.R \
+  "$PWD" \
+  "$PWD/experiments/daily/kfold" \
+  "$PWD/experiments/hourly/kfold"
+```
+
+Comparison outputs are written under:
+
+```text
+plots/comparisons/<scenario_1>__vs__<scenario_2>/
+```
+
+The comparison script generates a combined KGE empirical cumulative
+distribution function for all supplied scenarios.
+
+When exactly two scenarios are supplied, it additionally generates:
+
+- a paired basin-wise 1:1 KGE comparison;
+- a spatial map of the paired KGE difference;
+- `paired_comparison_summary.csv`.
+
+The complete performance summary for all supplied scenarios is written to:
+
+```text
+performance_comparison.csv
+```
+
+For paired comparisons, the KGE difference is defined as:
+
+```text
+delta KGE = scenario_y - scenario_x
+```
+
+where `scenario_x` is the first experiment supplied on the command line and
+`scenario_y` is the second. Positive values therefore indicate better
+performance for the second scenario, while negative values indicate better
+performance for the first scenario.
 
 ## Important implementation notes
 

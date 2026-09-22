@@ -5,7 +5,7 @@
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) != 2L) {
-  stop("Usage: Rscript 02_plot_kfold_performance.R <experiment_root> <dirMain>")
+  stop("Usage: Rscript 02_plot_experiment_performance.R <experiment_root> <dirMain>")
 }
 
 exp_root <- normalizePath(args[1], mustWork = TRUE)
@@ -90,7 +90,7 @@ if (!nrow(final_data)) {
 plot_dir <- ensure_dir(file.path(dirMain, "plots", experiment$timestep, basename(exp_root)))
 
 save_figure <- function(plot, filename, width = 7, height = 5) {
-  
+
   # Vector output, available on headless HPC systems.
   ggsave(
     file.path(plot_dir, paste0(filename, ".pdf")),
@@ -99,10 +99,10 @@ save_figure <- function(plot, filename, width = 7, height = 5) {
     height = height,
     device = grDevices::pdf
   )
-  
+
   # Raster output when supported by the local R installation.
   if (capabilities("png")) {
-    
+
     ggsave(
       file.path(plot_dir, paste0(filename, ".png")),
       plot,
@@ -111,9 +111,9 @@ save_figure <- function(plot, filename, width = 7, height = 5) {
       dpi = 300,
       device = grDevices::png
     )
-    
+
   } else {
-    
+
     message(
       "PNG device unavailable; skipping ",
       filename,
@@ -166,17 +166,25 @@ save_figure(p2, "02_kgee_ecdf")
 # KGE by fold
 # ==============================================================================
 
-p3 <- ggplot(final_data, aes(x = emulator, y = KGEe, colour = emulator)) +
-  geom_boxplot(width = 0.55, outlier.shape = NA) +
-  geom_jitter(width = 0.12, size = 0.9, alpha = 0.40) +
-  facet_wrap(~ fold, nrow = 1) +
-  scale_colour_manual(values = emulator_colours) +
-  kge_reference_y() +
-  labs(x = NULL, y = "Evaluation KGE") +
-  theme_lse() +
-  theme(legend.position = "none")
+if (length(unique(final_data$fold)) > 1L) {
 
-save_figure(p3, "03_kgee_by_fold", width = 12, height = 4.5)
+  p3 <- ggplot(final_data, aes(x = emulator, y = KGEe, colour = emulator)) +
+    geom_boxplot(width = 0.55, outlier.shape = NA) +
+    geom_jitter(width = 0.12, size = 0.9, alpha = 0.40) +
+    facet_wrap(~ fold, nrow = 1) +
+    scale_colour_manual(values = emulator_colours) +
+    kge_reference_y() +
+    labs(x = NULL, y = "Evaluation KGE") +
+    theme_lse() +
+    theme(legend.position = "none")
+
+  save_figure(p3, "03_kgee_by_fold", width = 12, height = 4.5)
+
+} else {
+
+  message("Single split detected; skipping 03_kgee_by_fold.")
+
+}
 
 
 # ==============================================================================
@@ -203,7 +211,7 @@ p4 <- ggplot(final_data, aes(x = basin_order, y = KGEe, colour = emulator)) +
   kge_reference_y() +
   scale_x_continuous(breaks = NULL) +
   labs(
-    x = "Held-out basins ordered by median KGE across emulators",
+    x = "Basins ordered by median KGE across emulators",
     y = "Evaluation KGE"
   ) +
   theme_lse()
@@ -237,13 +245,88 @@ p5 <- ggplot(step_summary, aes(x = step, y = KGEe, colour = emulator, group = em
 save_figure(p5, "05_kgee_by_refinement_step")
 
 # ==============================================================================
+# Spatial distribution of final-step KGE
+# ==============================================================================
+
+spatial <- load_nz_spatial_data(
+  dirMain
+)
+
+map_data <- join_station_results(
+  spatial$stations,
+  final_data
+)
+
+if (!nrow(map_data)) {
+  stop(
+    "No station IDs matched the experiment results."
+  )
+}
+
+map_data$emulator <- factor(
+  map_data$emulator,
+  levels = emulator_order
+)
+
+p6 <- ggplot() +
+  geom_sf(
+    data = spatial$nz,
+    fill = "grey95",
+    colour = "grey55",
+    linewidth = 0.25
+  ) +
+  geom_sf(
+    data = map_data,
+    aes(fill = KGEe),
+    shape = 21,
+    colour = "black",
+    stroke = 0.25,
+    size = 1.8,
+    alpha = 0.9
+  ) +
+  scale_fill_gradientn(
+    colours = viridisLite::viridis(256),
+    limits = c(-0.41, 1),
+    oob = scales::squish,
+    breaks = c(-0.41, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1),
+    labels = c("< -0.41", "-0.2", "0", "0.2", "0.4", "0.6", "0.8", "1"),
+    name = "Evaluation KGE"
+  )+
+  facet_wrap(
+    ~ emulator,
+    nrow = 1
+  ) +
+  coord_sf(
+    datum = NA
+  ) +
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+  theme_lse() +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "right",
+    legend.title = element_text()
+  )
+
+save_figure(
+  p6,
+  "06_kgee_map",
+  width = 11,
+  height = 5.5
+)
+
+# ==============================================================================
 # Performance summary
 # ==============================================================================
 
 summary_rows <- lapply(emulator_order, function(ml) {
-  
+
   x <- final_data$KGEe[final_data$emulator == ml]
-  
+
   data.frame(
     emulator = ml,
     n_basins = length(x),
@@ -264,7 +347,7 @@ performance_summary <- do.call(rbind, summary_rows)
 
 write.csv(
   performance_summary,
-  file.path(plot_dir, "kfold_performance_summary.csv"),
+  file.path(plot_dir, "performance_summary.csv"),
   row.names = FALSE
 )
 
@@ -308,7 +391,7 @@ summary_by_step <- do.call(
 
 write.csv(
   summary_by_step,
-  file.path(plot_dir, "kfold_performance_by_step.csv"),
+  file.path(plot_dir, "performance_by_step.csv"),
   row.names = FALSE
 )
 

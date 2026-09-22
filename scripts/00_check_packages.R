@@ -2,7 +2,8 @@
 
 # Check that all packages required by the workflow are available before running
 # the more computationally expensive preparation and emulator steps.
-pkgs <- c("ncdf4", "lhs", "ranger", "xgboost", "Matrix", "GA", "parallel")
+pkgs <- c("ncdf4", "lhs", "ranger", "xgboost", "Matrix", "GA", "parallel",
+          "sf", "viridisLite")
 
 status <- vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)
 

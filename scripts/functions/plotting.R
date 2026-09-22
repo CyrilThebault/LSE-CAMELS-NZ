@@ -36,7 +36,7 @@ experiment_shapes <- c(
 kge_limits <- c(-0.41, 1)
 
 kge_reference_y <- function() {
-  
+
   list(ggplot2::geom_hline(yintercept = 1, linetype = "dotted", linewidth = 0.5),
     ggplot2::coord_cartesian(ylim = kge_limits),
     ggplot2::scale_y_continuous( breaks = c(-0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1)))
@@ -44,13 +44,97 @@ kge_reference_y <- function() {
 
 
 kge_reference_x <- function() {
-  
+
   list( ggplot2::geom_vline(xintercept = 1, linetype = "dotted", linewidth = 0.5),
     ggplot2::coord_cartesian(xlim = kge_limits),
     ggplot2::scale_x_continuous(breaks = c(-0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1)))
 }
 
+# ==============================================================================
+# Spatial plotting helpers
+# ==============================================================================
 
+load_nz_spatial_data <- function(dirMain) {
+
+  if (!requireNamespace("sf", quietly = TRUE)) {
+    stop("Package 'sf' is required for spatial plots.")
+  }
+
+  file_nz <- file.path(
+    dirMain,
+    "shapefiles",
+    "nz.shp"
+  )
+
+  file_stations <- file.path(
+    dirMain,
+    "shapefiles",
+    "camel_stationsNZ.shp"
+  )
+
+  if (!file.exists(file_nz)) {
+    stop("Missing shapefile: ", file_nz)
+  }
+
+  if (!file.exists(file_stations)) {
+    stop("Missing shapefile: ", file_stations)
+  }
+
+  nz <- sf::st_read(
+    file_nz,
+    quiet = TRUE
+  )
+
+  stations <- sf::st_read(
+    file_stations,
+    quiet = TRUE
+  )
+
+  stations <- sf::st_transform(
+    stations,
+    sf::st_crs(nz)
+  )
+
+  stations$Station_ID <- as.character(
+    stations$Station_ID
+  )
+
+  list(
+    nz = nz,
+    stations = stations
+  )
+}
+
+
+join_station_results <- function(
+    stations,
+    results,
+    id_column = "ID"
+) {
+
+  if (!id_column %in% names(results)) {
+    stop(
+      "Missing basin ID column: ",
+      id_column
+    )
+  }
+
+  results[[id_column]] <- as.character(
+    results[[id_column]]
+  )
+
+  stations$Station_ID <- as.character(
+    stations$Station_ID
+  )
+
+  merge(
+    stations,
+    results,
+    by.x = "Station_ID",
+    by.y = id_column,
+    all = FALSE
+  )
+}
 
 # ==============================================================================
 # Common ggplot theme
