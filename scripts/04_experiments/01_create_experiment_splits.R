@@ -183,6 +183,42 @@ if (mode == "allseen") {
 
   clusters <- unique(cluster_labels)
 
+  # Build deterministic, filesystem-safe fold names from cluster values.
+  cluster_tags <- gsub(
+    "[^A-Za-z0-9._-]+",
+    "_",
+    as.character(clusters)
+  )
+
+  cluster_tags <- gsub(
+    "^_+|_+$",
+    "",
+    cluster_tags
+  )
+
+  if (any(!nzchar(cluster_tags))) {
+    stop(
+      "At least one cluster value cannot be converted to a safe fold name."
+    )
+  }
+
+  if (anyDuplicated(cluster_tags)) {
+
+    duplicated_tags <- unique(
+      cluster_tags[
+        duplicated(cluster_tags)
+      ]
+    )
+
+    stop(
+      "Cluster values are not unique after sanitizing fold names: ",
+      paste(
+        duplicated_tags,
+        collapse = ", "
+      )
+    )
+  }
+
   if (length(clusters) < 2L) {
     stop(
       "Cluster cross-validation requires at least two distinct clusters ",
@@ -197,7 +233,7 @@ if (mode == "allseen") {
 
     make_fold(
       base,
-      sprintf("cluster_%02d", k),
+      paste0("cluster_", cluster_tags[k]),
       setdiff(ids, test),
       test,
       list(
