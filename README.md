@@ -307,6 +307,9 @@ Rscript scripts/04_experiments/01_create_experiment_splits.R \
 
 Rscript scripts/04_experiments/01_create_experiment_splits.R \
   kfold "$CONFIG_FILE" "$DIR_MAIN" 2
+
+Rscript scripts/04_experiments/01_create_experiment_splits.R \
+  cluster "$CONFIG_FILE" "$DIR_MAIN"
 ```
 
 Available experiment modes are:
@@ -314,6 +317,8 @@ Available experiment modes are:
 - `allseen`: all basins are used for training and final evaluation;
 - `loo`: each basin is held out once;
 - `kfold`: basins are randomly divided into K folds.
+
+- `cluster`: each hydrological cluster is held out in turn.
 
 For example, with `config/experiment_daily.R`, a 2-fold experiment is created
 under:
@@ -328,7 +333,7 @@ With `config/experiment_hourly.R`, it is created under:
 experiments/hourly/kfold/
 ```
 
-Cluster-based cross-validation is planned but is not currently implemented.
+Cluster-based cross-validation is also supported. Cluster labels are read from `data/useful_files/attributes.RData`; the optional cluster-column argument defaults to `hydro_cluster`. Each cluster is held out in turn, using only the basins listed in `config/basins.txt`.
 
 ## 4. Run one fold
 

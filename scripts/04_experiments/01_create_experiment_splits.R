@@ -7,7 +7,7 @@
 #   - allseen: all basins are used for both training and evaluation
 #   - loo:         one basin is held out at a time
 #   - kfold:       basins are randomly divided into K folds
-#   - cluster:     one hydrological cluster is held out at a time (in development)
+#   - cluster:     one hydrological cluster is held out at a time
 # ==============================================================================
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -135,37 +135,78 @@ if (mode == "allseen") {
   # Cluster cross-validation
   #
   # Each hydrological cluster is held out in turn. Cluster labels must already be
-  # available in basins.txt, for example after deriving them from static attributes.
+  # available in attributes.RData, for example after deriving them from static attributes.
   # ==============================================================================
   
 } else if (mode == "cluster") {
-  
+
   cluster_col <- if (length(args) >= 4L) args[4] else "hydro_cluster"
-  
-  if (!cluster_col %in% names(btab)) {
-    stop("Cluster column missing from basins.txt: ", cluster_col)
+
+  attributes <- load_rdata_single(
+    file.path(paths$useful, "attributes.RData")
+  )
+
+  if (!"ID" %in% names(attributes)) {
+    stop("ID column missing from attributes.RData")
   }
-  
-  if (anyNA(btab[[cluster_col]])) {
+
+  if (!cluster_col %in% names(attributes)) {
+    stop("Cluster column missing from attributes.RData: ", cluster_col)
+  }
+
+  attribute_ids <- as.character(attributes$ID)
+
+  if (anyDuplicated(attribute_ids)) {
+    stop("Duplicate basin ID(s) found in attributes.RData")
+  }
+
+  rows <- match(ids, attribute_ids)
+
+  if (anyNA(rows)) {
+    stop(
+      "Basin(s) missing from attributes.RData: ",
+      paste(ids[is.na(rows)], collapse = ", ")
+    )
+  }
+
+  cluster_labels <- trimws(
+    as.character(attributes[[cluster_col]][rows])
+  )
+
+  if (anyNA(cluster_labels)) {
     stop("NA cluster labels found in column: ", cluster_col)
   }
-  
-  clusters <- unique(btab[[cluster_col]])
-  
+
+  if (any(!nzchar(cluster_labels))) {
+    stop("Empty cluster labels found in column: ", cluster_col)
+  }
+
+  clusters <- unique(cluster_labels)
+
+  if (length(clusters) < 2L) {
+    stop(
+      "Cluster cross-validation requires at least two distinct clusters ",
+      "among the selected basins."
+    )
+  }
+
   for (k in seq_along(clusters)) {
-    
+
     cluster_value <- clusters[k]
-    test <- ids[btab[[cluster_col]] == cluster_value]
-    
+    test <- ids[cluster_labels == cluster_value]
+
     make_fold(
       base,
       sprintf("cluster_%02d", k),
       setdiff(ids, test),
       test,
-      list(cluster_column = cluster_col, cluster_value = cluster_value)
+      list(
+        cluster_column = cluster_col,
+        cluster_value = cluster_value
+      )
     )
   }
-  
+
 } else {
   
   stop("Unknown split mode: ", mode)
