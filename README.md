@@ -18,26 +18,26 @@ dataset or preparing a full FUSE template.
 2. Review the experiment configurations under:
 
    ```text
-   config/daily/experiment.R
-   config/hourly/experiment.R
+   config/experiment_daily.R
+   config/experiment_hourly.R
    ```
 
-   The active workflow configuration is:
+   Each workflow invocation must use an explicit configuration file. For
+   shell wrappers, set `CONFIG_FILE`; R scripts receive the configuration file
+   as an explicit command-line argument.
 
-   ```text
-   config/experiment.R
-   ```
-
-   To select the daily experiment:
+   For example, for the daily configuration:
 
    ```bash
-   cp config/daily/experiment.R config/experiment.R
+   export DIR_MAIN="$PWD"
+   export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
    ```
 
-   To select the hourly experiment:
+   For the hourly configuration:
 
    ```bash
-   cp config/hourly/experiment.R config/experiment.R
+   export DIR_MAIN="$PWD"
+   export CONFIG_FILE="$DIR_MAIN/config/experiment_hourly.R"
    ```
 
    Edit the selected configuration to match your objectives. Experiment dates
@@ -92,8 +92,8 @@ The provided ARC Slurm scripts load this environment automatically.
 
 ### Time-step-specific directories
 
-The active temporal resolution is defined by `experiment$timestep` in
-`config/experiment.R`.
+The temporal resolution is defined by `experiment$timestep` in the explicit
+configuration file supplied to the workflow.
 
 Time-step-specific inputs and outputs are automatically separated into:
 
@@ -130,13 +130,13 @@ Depending on what you want to test:
 - copy the testcase `config/`, `data/`, and `outputs/` directories and start
   from **Step 3** to test the emulator workflow directly.
 
-After copying the testcase, select either the daily or hourly configuration
-before running the workflow.
+After copying the testcase, set `CONFIG_FILE` to either the daily or hourly
+configuration before running the workflow.
 
 ## 1. Prepare CAMELS-NZ/FUSE inputs
 
-Select the required temporal resolution in `config/experiment.R` before running
-the preparation workflow.
+The configuration file determines the temporal resolution and all
+configuration-dependent paths used by the preparation workflow.
 
 The CAMELS-NZ forcing and elevation-band files are prepared independently for
 each basin.
@@ -148,12 +148,13 @@ ARC. The number of array tasks is determined from `config/basins.txt`.
 
 ```bash
 export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
 
 NBASINS=$(wc -l < "$DIR_MAIN/config/basins.txt")
 
 sbatch \
   --array=1-"$NBASINS" \
-  --export=ALL,DIR_MAIN="$DIR_MAIN" \
+  --export=ALL,DIR_MAIN="$DIR_MAIN",CONFIG_FILE="$CONFIG_FILE" \
   scripts/01_prepare/01_prepare_CAMELS_NZ_hpc_arc.slurm
 ```
 
@@ -172,6 +173,7 @@ Then, the step can be run with:
 
 ```bash
 export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
 export NCORES=5
 
 bash scripts/01_prepare/01_prepare_CAMELS_NZ_local.sh
@@ -183,7 +185,10 @@ available hardware.
 For a sequential run, the preparation script can also be called directly:
 
 ```bash
-Rscript scripts/01_prepare/01_prepare_CAMELS_NZ.R ALL "$PWD"
+Rscript scripts/01_prepare/01_prepare_CAMELS_NZ.R \
+  ALL \
+  "$CONFIG_FILE" \
+  "$DIR_MAIN"
 ```
 
 Prepared forcing and elevation-band files are written to:
@@ -198,10 +203,17 @@ Once the basin-level preparation is complete, generate the shared FUSE settings,
 metadata, CAMELS-NZ attributes, and validate the prepared inputs:
 
 ```bash
-Rscript scripts/01_prepare/02_prepare_FUSE_settings.R "$PWD"
-Rscript scripts/01_prepare/03_create_FUSE_metadata.R "$PWD"
-Rscript scripts/01_prepare/04_create_CAMELS_NZ_attributes.R "$PWD"
-Rscript scripts/01_prepare/05_validate_preparation.R "$PWD"
+Rscript scripts/01_prepare/02_prepare_FUSE_settings.R \
+  "$CONFIG_FILE" "$DIR_MAIN"
+
+Rscript scripts/01_prepare/03_create_FUSE_metadata.R \
+  "$CONFIG_FILE" "$DIR_MAIN"
+
+Rscript scripts/01_prepare/04_create_CAMELS_NZ_attributes.R \
+  "$CONFIG_FILE" "$DIR_MAIN"
+
+Rscript scripts/01_prepare/05_validate_preparation.R \
+  "$CONFIG_FILE" "$DIR_MAIN"
 ```
 
 The preparation report is written to:
@@ -220,12 +232,13 @@ This step can be skipped when using the prepared testcase.
 
 ## 2. Generate immutable iter0 database
 
-The size of the initial parameter ensemble is defined by `nIter0` in
-`config/experiment.R`.
+The size of the initial parameter ensemble is defined by `nIter0` in the
+explicit workflow configuration.
 
 The normalized Latin Hypercube parameter design depends on the experiment seed,
-basin ID, number of iterations, and active FUSE parameter set. The temporal
-resolution does not directly enter the sampling procedure.
+basin ID, number of iterations, and FUSE parameter set defined by the selected
+structural decision. The temporal resolution does not directly enter the
+sampling procedure.
 
 The resulting FUSE simulations are stored separately for each temporal
 resolution under:
@@ -242,12 +255,13 @@ from `config/basins.txt`.
 
 ```bash
 export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
 
 NBASINS=$(wc -l < "$DIR_MAIN/config/basins.txt")
 
 sbatch \
   --array=1-"$NBASINS" \
-  --export=ALL,DIR_MAIN="$DIR_MAIN" \
+  --export=ALL,DIR_MAIN="$DIR_MAIN",CONFIG_FILE="$CONFIG_FILE" \
   scripts/02_iter0/run_iter0_hpc_arc.slurm
 ```
 
@@ -258,6 +272,7 @@ without Slurm.
 
 ```bash
 export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
 export NCORES=5
 
 bash scripts/02_iter0/run_iter0_local.sh
@@ -271,7 +286,8 @@ This step can be skipped when using the precomputed
 
 ## 3. Create experiment splits
 
-Experiment directories are created under the active temporal resolution:
+Experiment directories are created under the temporal resolution defined by
+the supplied configuration:
 
 ```text
 experiments/<timestep>/
@@ -280,9 +296,17 @@ experiments/<timestep>/
 For example:
 
 ```bash
-Rscript scripts/04_experiments/01_create_experiment_splits.R allseen "$PWD"
-Rscript scripts/04_experiments/01_create_experiment_splits.R loo "$PWD"
-Rscript scripts/04_experiments/01_create_experiment_splits.R kfold "$PWD" 2
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+
+Rscript scripts/04_experiments/01_create_experiment_splits.R \
+  allseen "$CONFIG_FILE" "$DIR_MAIN"
+
+Rscript scripts/04_experiments/01_create_experiment_splits.R \
+  loo "$CONFIG_FILE" "$DIR_MAIN"
+
+Rscript scripts/04_experiments/01_create_experiment_splits.R \
+  kfold "$CONFIG_FILE" "$DIR_MAIN" 2
 ```
 
 Available experiment modes are:
@@ -291,14 +315,14 @@ Available experiment modes are:
 - `loo`: each basin is held out once;
 - `kfold`: basins are randomly divided into K folds.
 
-For example, with the daily configuration active, a 2-fold experiment is
-created under:
+For example, with `config/experiment_daily.R`, a 2-fold experiment is created
+under:
 
 ```text
 experiments/daily/kfold/
 ```
 
-With the hourly configuration active, it is created under:
+With `config/experiment_hourly.R`, it is created under:
 
 ```text
 experiments/hourly/kfold/
@@ -316,8 +340,8 @@ by searching the parameter space and running FUSE.
 Test-basin FUSE results are used only for evaluation and never feed back into
 model training.
 
-Make sure that `config/experiment.R` corresponds to the same temporal
-resolution as the experiment directory being run.
+The same configuration file should be used to create the experiment splits and
+to run the corresponding emulator workflow.
 
 ### On ARC HPC (University of Calgary)
 
@@ -329,27 +353,40 @@ To submit all splits of an experiment, use `submit_LSE_experiment_hpc_arc.sh`.
 For example, for a k-fold experiment:
 
 ```bash
-bash scripts/03_emulator/submit_LSE_experiment_hpc_arc.sh "$PWD" kfold
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+
+bash scripts/03_emulator/submit_LSE_experiment_hpc_arc.sh \
+  "$DIR_MAIN" \
+  "$CONFIG_FILE" \
+  kfold
 ```
 
-The first argument is the project root directory and the second argument is the
-experiment name. Supported experiments include `allseen`, `loo` and `kfold`.
+The arguments are the project root directory, the explicit configuration file,
+and the experiment name:
 
-The active temporal resolution is read from `config/experiment.R`. Experiment
+```text
+<DIR_MAIN> <CONFIG_FILE> <experiment>
+```
+
+Supported experiments include `allseen`, `loo` and `kfold`.
+
+The temporal resolution is read from the supplied configuration file. Experiment
 splits are therefore discovered under: `experiments/<timestep>/<experiment>/`.
 
 The submission script discovers all valid split directories containing both
 `train_basins.txt` and `test_basins.txt` and submits one Slurm job per split.
 
-`ZDECISION` and `NREFINE` are read from `config/experiment.R` by default and
-can be overridden through environment variables if required.
+`ZDECISION` and `NREFINE` are read from the supplied configuration file by
+default and can be overridden through environment variables if required.
 
 To submit a single split manually, set the project and split directories
 explicitly. For example:
 
 ```bash
 export DIR_MAIN="$PWD"
-export EXPERIMENT_DIR="$PWD/experiments/daily/kfold/fold_01"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+export EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
 export ZDECISION=126
 export NREFINE=2
 
@@ -367,7 +404,8 @@ For example, for a daily experiment:
 
 ```bash
 export DIR_MAIN="$PWD"
-export EXPERIMENT_DIR="$PWD/experiments/daily/kfold/fold_01"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+export EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
 export ZDECISION=126
 export NREFINE=2
 export NCORES=4
@@ -378,6 +416,7 @@ bash scripts/03_emulator/run_LSE_split_local.sh
 For an hourly experiment, set:
 
 ```bash
+export CONFIG_FILE="$PWD/config/experiment_hourly.R"
 export EXPERIMENT_DIR="$PWD/experiments/hourly/kfold/fold_01"
 ```
 
@@ -393,6 +432,7 @@ For daily:
 Rscript scripts/05_analysis/01_collect_results.R \
   "$PWD/experiments/daily/kfold" \
   126 \
+  "$PWD/config/experiment_daily.R" \
   "$PWD"
 ```
 
@@ -402,6 +442,7 @@ For hourly:
 Rscript scripts/05_analysis/01_collect_results.R \
   "$PWD/experiments/hourly/kfold" \
   126 \
+  "$PWD/config/experiment_hourly.R" \
   "$PWD"
 ```
 
@@ -417,6 +458,7 @@ experiment type with:
 ```bash
 Rscript scripts/05_analysis/02_plot_experiment_performance.R \
   "$PWD/experiments/<timestep>/<experiment>" \
+  "$PWD/config/experiment_<timestep>.R" \
   "$PWD"
 ```
 
@@ -425,6 +467,7 @@ For example:
 ```bash
 Rscript scripts/05_analysis/02_plot_experiment_performance.R \
   "$PWD/experiments/hourly/kfold" \
+  "$PWD/config/experiment_hourly.R" \
   "$PWD"
 ```
 
@@ -433,6 +476,7 @@ or:
 ```bash
 Rscript scripts/05_analysis/02_plot_experiment_performance.R \
   "$PWD/experiments/hourly/allseen" \
+  "$PWD/config/experiment_hourly.R" \
   "$PWD"
 ```
 

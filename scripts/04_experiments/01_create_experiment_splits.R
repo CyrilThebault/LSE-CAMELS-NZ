@@ -12,17 +12,21 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) < 2L) {
-  stop("Usage: Rscript 01_create_experiment_splits.R <allseen|loo|kfold> <dirMain> [K]")
+if (length(args) < 3L) {
+  stop(
+    "Usage: Rscript 01_create_experiment_splits.R ",
+    "<allseen|loo|kfold|cluster> <config_file> <dirMain> [K|cluster_column]"
+  )
 }
 
 mode <- args[1]
-dirMain <- normalizePath(args[2], mustWork = TRUE)
+config_file <- normalizePath(args[2], mustWork = TRUE)
+dirMain <- normalizePath(args[3], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(dirMain)
+experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
 
 ids <- read_basin_ids(file.path(dirMain, "config", "basins.txt"))
@@ -104,7 +108,7 @@ if (mode == "allseen") {
   
 } else if (mode == "kfold") {
   
-  K <- if (length(args) >= 3L) as.integer(args[3]) else 5L
+  K <- if (length(args) >= 4L) as.integer(args[4]) else 5L
   
   if (is.na(K) || K < 2L || K > length(ids)) {
     stop("Invalid K: ", K)
@@ -136,7 +140,7 @@ if (mode == "allseen") {
   
 } else if (mode == "cluster") {
   
-  cluster_col <- if (length(args) >= 3L) args[3] else "hydro_cluster"
+  cluster_col <- if (length(args) >= 4L) args[4] else "hydro_cluster"
   
   if (!cluster_col %in% names(btab)) {
     stop("Cluster column missing from basins.txt: ", cluster_col)

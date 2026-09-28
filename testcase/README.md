@@ -21,11 +21,8 @@ testcase/
 ├── config/
 │   ├── attributes_used.txt
 │   ├── basins.txt
-│   ├── experiment.R
-│   ├── daily/
-│   │   └── experiment.R
-│   └── hourly/
-│       └── experiment.R
+│   ├── experiment_daily.R
+│   └── experiment_hourly.R
 ├── data/
 │   ├── forcings/
 │   │   ├── daily/
@@ -50,22 +47,29 @@ case:
   `Station_ID` per line and no header;
 - `attributes_used.txt`: CAMELS-NZ catchment attributes used as emulator
   predictors;
-- `daily/experiment.R`: configuration for the daily experiment;
-- `hourly/experiment.R`: configuration for the hourly experiment;
-- `experiment.R`: active workflow configuration.
+- `experiment_daily.R`: configuration for the daily experiment;
+- `experiment_hourly.R`: configuration for the hourly experiment.
 
-The active configuration is daily by default.
+Each workflow invocation must use one of these configuration files explicitly.
+For shell wrappers, set `CONFIG_FILE`; R scripts receive the configuration file
+as an explicit command-line argument.
 
-To select the daily experiment:
+For daily:
 
 ```bash
-cp config/daily/experiment.R config/experiment.R
+
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+
 ```
 
-To select the hourly experiment:
+For hourly:
 
 ```bash
-cp config/hourly/experiment.R config/experiment.R
+
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_hourly.R"
+
 ```
 
 The experiment dates are defined explicitly in each configuration file and
@@ -118,18 +122,25 @@ The test configuration will therefore replace the corresponding configuration
 files in `config/`. If you already have a working configuration, make a copy of
 it before running these commands.
 
-After copying the test case, select the temporal resolution to use.
+After copying the test case, set `CONFIG_FILE` to the temporal resolution
+you want to use.
 
 For daily:
 
 ```bash
-cp config/daily/experiment.R config/experiment.R
+
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+
 ```
 
 For hourly:
 
 ```bash
-cp config/hourly/experiment.R config/experiment.R
+
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_hourly.R"
+
 ```
 
 All timestep-specific inputs, outputs, and experiments are automatically read
@@ -148,8 +159,8 @@ cp -R testcase/config/. config/
 cp -R testcase/data/. data/
 ```
 
-Then select either the daily or hourly configuration and start the workflow
-from:
+Then set `CONFIG_FILE` to either `config/experiment_daily.R` or
+`config/experiment_hourly.R` and start the workflow from:
 
 ```text
 scripts/02_iter0/
@@ -176,7 +187,11 @@ workflow.
 For example, to create a 2-fold cross-validation experiment:
 
 ```bash
-Rscript scripts/04_experiments/01_create_experiment_splits.R kfold "$PWD" 2
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+
+Rscript scripts/04_experiments/01_create_experiment_splits.R \
+  kfold "$CONFIG_FILE" "$DIR_MAIN" 2
 ```
 
 The resulting folds are stored separately for each temporal resolution:
@@ -191,7 +206,8 @@ or:
 experiments/hourly/kfold/
 ```
 
-depending on the active `config/experiment.R`.
+according to the `experiment$timestep` value in the supplied configuration
+file.
 
 The emulator can then be trained and evaluated using the workflow described in
 the main repository README.

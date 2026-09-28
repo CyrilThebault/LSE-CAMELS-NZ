@@ -10,19 +10,20 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 4L) {
-  stop("Usage: Rscript 01_run_iter0.R <basinID> <zDecision> <work_dir> <dirMain>")
+if (length(args) != 5L) {
+  stop("Usage: Rscript 01_run_iter0.R <basinID> <zDecision> <work_dir> <config_file> <dirMain>")
 }
 
 basinID <- as.character(args[1])
 zDecision <- as.character(args[2])
 work_dir <- args[3]
-dirMain <- normalizePath(args[4], mustWork = TRUE)
+config_file <- normalizePath(args[4], mustWork = TRUE)
+dirMain <- normalizePath(args[5], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/fuse.R"))
 
-experiment <- load_workflow_config(dirMain)
+experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
 
 suppressPackageStartupMessages({

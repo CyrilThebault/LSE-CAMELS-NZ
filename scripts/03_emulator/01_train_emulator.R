@@ -13,15 +13,16 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 5L) {
-  stop("Usage: Rscript 01_train_emulator.R <experiment_dir> <zDecision> <iStep> <nCores> <dirMain>")
+if (length(args) != 6L) {
+  stop("Usage: Rscript 01_train_emulator.R <experiment_dir> <zDecision> <iStep> <nCores> <config_file> <dirMain>")
 }
 
 experiment_dir <- normalizePath(args[1], mustWork = TRUE)
 zDecision <- args[2]
 iStep <- as.integer(args[3])
 nCores <- as.integer(args[4])
-dirMain <- normalizePath(args[5], mustWork = TRUE)
+config_file <- normalizePath(args[5], mustWork = TRUE)
+dirMain <- normalizePath(args[6], mustWork = TRUE)
 
 
 # ==============================================================================
@@ -45,7 +46,7 @@ suppressPackageStartupMessages({
 # Configuration and input data
 # ==============================================================================
 
-experiment <- load_workflow_config(dirMain)
+experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
 
 train_ids <- read_basin_ids(file.path(experiment_dir, "train_basins.txt"))

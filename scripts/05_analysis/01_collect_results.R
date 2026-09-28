@@ -10,18 +10,19 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 3L) {
-  stop("Usage: Rscript 01_collect_results.R <experiment_root> <zDecision> <dirMain>")
+if (length(args) != 4L) {
+  stop("Usage: Rscript 01_collect_results.R <experiment_root> <zDecision> <config_file> <dirMain>")
 }
 
 exp_root <- normalizePath(args[1], mustWork = TRUE)
 zDecision <- args[2]
-dirMain <- normalizePath(args[3], mustWork = TRUE)
+config_file <- normalizePath(args[3], mustWork = TRUE)
+dirMain <- normalizePath(args[4], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(dirMain)
+experiment <- load_workflow_config(config_file)
 
 folds <- list.dirs(exp_root, recursive = FALSE, full.names = TRUE)
 

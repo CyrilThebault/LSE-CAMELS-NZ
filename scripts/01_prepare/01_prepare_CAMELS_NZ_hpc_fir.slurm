@@ -30,6 +30,7 @@ module load r/4.4.0
 ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:?This script must be submitted as a Slurm job array}"
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
+CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
 
 BASIN_FILE="$DIR_MAIN/config/basins.txt"
 
@@ -56,7 +57,4 @@ echo "Preparing basin: ${BASIN_ID}"
 # CAMELS-NZ preparation
 # ==============================================================================
 
-Rscript \
-  "$DIR_MAIN/scripts/01_prepare/01_prepare_CAMELS_NZ.R" \
-  "$BASIN_ID" \
-  "$DIR_MAIN"
+Rscript "$DIR_MAIN/scripts/01_prepare/01_prepare_CAMELS_NZ.R" "$BASIN_ID" "$CONFIG_FILE" "$DIR_MAIN"

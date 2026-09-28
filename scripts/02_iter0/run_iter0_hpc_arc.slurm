@@ -40,8 +40,9 @@ ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:?This script must be submitted as a Slurm j
 # ==============================================================================
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
+CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
 
-ZDECISION="${ZDECISION:-$(Rscript -e "source('${DIR_MAIN}/config/experiment.R'); cat(experiment\$zDecision)")}"
+ZDECISION="${ZDECISION:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$zDecision)")}"
 
 BASIN_FILE="$DIR_MAIN/config/basins.txt"
 
@@ -78,4 +79,4 @@ mkdir -p "$TMP_BASE"
 # concurrent model runs.
 # ==============================================================================
 
-Rscript "$DIR_MAIN/scripts/02_iter0/01_run_iter0.R" "$BASIN_ID" "$ZDECISION" "$TMP_BASE" "$DIR_MAIN"
+Rscript "$DIR_MAIN/scripts/02_iter0/01_run_iter0.R" "$BASIN_ID" "$ZDECISION" "$TMP_BASE" "$CONFIG_FILE" "$DIR_MAIN"

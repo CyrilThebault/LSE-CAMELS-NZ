@@ -10,8 +10,8 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 7L) {
-  stop("Usage: Rscript 03_run_FUSE_candidates.R <basinID> <experiment_dir> <zDecision> <modelStep> <phase> <work_dir> <dirMain>")
+if (length(args) != 8L) {
+  stop("Usage: Rscript 03_run_FUSE_candidates.R <basinID> <experiment_dir> <zDecision> <modelStep> <phase> <work_dir> <config_file> <dirMain>")
 }
 
 basinID <- as.character(args[1])
@@ -20,12 +20,13 @@ zDecision <- args[3]
 modelStep <- as.integer(args[4])
 phase <- args[5]
 work_dir <- args[6]
-dirMain <- normalizePath(args[7], mustWork = TRUE)
+config_file <- normalizePath(args[7], mustWork = TRUE)
+dirMain <- normalizePath(args[8], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/fuse.R"))
 
-experiment <- load_workflow_config(dirMain)
+experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
 
 suppressPackageStartupMessages(library(ncdf4))

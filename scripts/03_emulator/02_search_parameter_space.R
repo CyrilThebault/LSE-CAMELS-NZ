@@ -10,8 +10,8 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 6L) {
-  stop("Usage: Rscript 02_search_parameter_space.R <basinID> <experiment_dir> <zDecision> <modelStep> <phase:train|test> <dirMain>")
+if (length(args) != 7L) {
+  stop("Usage: Rscript 02_search_parameter_space.R <basinID> <experiment_dir> <zDecision> <modelStep> <phase:train|test> <config_file> <dirMain>")
 }
 
 basinID <- as.character(args[1])
@@ -19,7 +19,8 @@ experiment_dir <- normalizePath(args[2], mustWork = TRUE)
 zDecision <- args[3]
 modelStep <- as.integer(args[4])
 phase <- args[5]
-dirMain <- normalizePath(args[6], mustWork = TRUE)
+config_file <- normalizePath(args[6], mustWork = TRUE)
+dirMain <- normalizePath(args[7], mustWork = TRUE)
 
 if (!phase %in% c("train", "test")) {
   stop("phase must be train or test")
@@ -34,7 +35,7 @@ source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/fuse.R"))
 source(file.path(dirMain, "scripts/functions/emulator.R"))
 
-experiment <- load_workflow_config(dirMain)
+experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
 
 suppressPackageStartupMessages({

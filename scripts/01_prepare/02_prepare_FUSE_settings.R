@@ -9,15 +9,16 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 1L) {
-  stop("Usage: Rscript 02_prepare_FUSE_settings.R <dirMain>")
+if (length(args) != 2L) {
+  stop("Usage: Rscript 02_prepare_FUSE_settings.R <config_file> <dirMain>")
 }
 
-dirMain <- normalizePath(args[1], mustWork = TRUE)
+config_file <- normalizePath(args[1], mustWork = TRUE)
+dirMain <- normalizePath(args[2], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts/functions/common.R"))
 
-experiment <- load_workflow_config(dirMain)
+experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
 
 

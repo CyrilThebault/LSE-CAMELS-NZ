@@ -4,12 +4,13 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 2L) {
-  stop("Usage: Rscript 02_plot_experiment_performance.R <experiment_root> <dirMain>")
+if (length(args) != 3L) {
+  stop("Usage: Rscript 02_plot_experiment_performance.R <experiment_root> <config_file> <dirMain>")
 }
 
 exp_root <- normalizePath(args[1], mustWork = TRUE)
-dirMain <- normalizePath(args[2], mustWork = TRUE)
+config_file <- normalizePath(args[2], mustWork = TRUE)
+dirMain <- normalizePath(args[3], mustWork = TRUE)
 
 
 # ==============================================================================
@@ -19,7 +20,7 @@ dirMain <- normalizePath(args[2], mustWork = TRUE)
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/plotting.R"))
 
-experiment <- load_workflow_config(dirMain)
+experiment <- load_workflow_config(config_file)
 
 library(ggplot2)
 

@@ -1,23 +1,18 @@
 # ==============================================================================
 # Workflow configuration
 #
-# Load config/experiment.R in its own environment and return the experiment list
-# used throughout the preparation, emulator and experiment scripts.
+# Load an explicitly selected experiment configuration in its own environment
+# and return the experiment list used throughout the workflow.
 # ==============================================================================
-
-load_workflow_config <- function(dirMain) {
+load_workflow_config <- function(config_file) {
   
-  cfg <- file.path(dirMain, "config", "experiment.R")
-  
-  if (!file.exists(cfg)) {
-    stop("Missing configuration file: ", cfg)
-  }
+  config_file <- normalizePath(config_file, mustWork = TRUE)
   
   env <- new.env(parent = globalenv())
-  sys.source(cfg, envir = env)
+  sys.source(config_file, envir = env)
   
   if (!exists("experiment", envir = env, inherits = FALSE)) {
-    stop("experiment object missing from ", cfg)
+    stop("experiment object missing from ", config_file)
   }
   
   env$experiment
@@ -50,7 +45,7 @@ get_timestep_info <- function(experiment) {
 # Convert a NetCDF time coordinate to POSIXct
 #
 # The NetCDF time unit is checked against the temporal resolution defined in
-# experiment.R before converting the numerical coordinate to timestamps.
+# experiment configuration before converting the numerical coordinate to timestamps.
 # ==============================================================================
 
 nc_time_to_posixct <- function(time_raw, units, experiment) {

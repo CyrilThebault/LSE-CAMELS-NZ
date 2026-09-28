@@ -13,6 +13,8 @@ export MKL_NUM_THREADS=1
 # ==============================================================================
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
+CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
+
 NCORES="${NCORES:-4}"
 
 BASIN_FILE="$DIR_MAIN/config/basins.txt"
@@ -28,4 +30,4 @@ fi
 # Each basin is prepared independently and writes its own forcing files.
 # ==============================================================================
 
-parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/01_prepare/01_prepare_CAMELS_NZ.R" {} "$DIR_MAIN" :::: "$BASIN_FILE"
+parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/01_prepare/01_prepare_CAMELS_NZ.R" {} "$CONFIG_FILE" "$DIR_MAIN" :::: "$BASIN_FILE"

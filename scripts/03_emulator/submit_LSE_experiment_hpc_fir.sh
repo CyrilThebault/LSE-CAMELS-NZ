@@ -9,25 +9,34 @@ set -euo pipefail
 #
 # Example:
 #   bash submit_LSE_experiment_hpc_fir.sh \
-#     /home/thebault/ESNZ/02_DATA/LSE-CAMELS-NZ \
+#     /project/6079554/thebault/ESNZ/02_DATA/LSE-CAMELS-NZ \
+#     /project/6079554/thebault/ESNZ/02_DATA/LSE-CAMELS-NZ/config/experiment_hourly.R \
 #     kfold
 #
 # Optional environment overrides:
-#   ZDECISION=126 NREFINE=2 bash submit_LSE_experiment_hpc_fir.sh <DIR_MAIN> kfold
+#   ZDECISION=126 NREFINE=2 bash submit_LSE_experiment_hpc_fir.sh \
+#     <DIR_MAIN> <CONFIG_FILE> <experiment>
 # ==============================================================================
 
 module --force purge
 module load StdEnv/2023
 module load r/4.4.0
 
-if [ "$#" -ne 2 ]; then
-  echo "Usage: bash submit_LSE_experiment_hpc_fir.sh <DIR_MAIN> <experiment>"
-  echo "Example: bash submit_LSE_experiment_hpc_fir.sh /path/to/LSE-CAMELS-NZ kfold"
+if [ "$#" -ne 3 ]; then
+  echo "Usage: bash submit_LSE_experiment_hpc_fir.sh <DIR_MAIN> <CONFIG_FILE> <experiment>"
+  echo "Example: bash submit_LSE_experiment_hpc_fir.sh /path/to/LSE-CAMELS-NZ /path/to/LSE-CAMELS-NZ/config/experiment_hourly.R kfold"
   exit 1
 fi
 
 DIR_MAIN="$(cd "$1" && pwd)"
-EXPERIMENT="$2"
+CONFIG_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+EXPERIMENT="$3"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "Configuration file does not exist:"
+  echo "  $CONFIG_FILE"
+  exit 1
+fi
 
 SLURM_SCRIPT="$DIR_MAIN/scripts/03_emulator/run_LSE_split_hpc_fir.slurm"
 
@@ -41,10 +50,9 @@ fi
 # Workflow configuration
 # ==============================================================================
 
-TIMESTEP="$(Rscript -e "source('${DIR_MAIN}/config/experiment.R'); cat(experiment\$timestep)")"
-
-ZDECISION="${ZDECISION:-$(Rscript -e "source('${DIR_MAIN}/config/experiment.R'); cat(experiment\$zDecision)")}"
-NREFINE="${NREFINE:-$(Rscript -e "source('${DIR_MAIN}/config/experiment.R'); cat(experiment\$nRefinementSteps)")}"
+TIMESTEP="$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$timestep)")"
+ZDECISION="${ZDECISION:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$zDecision)")}"
+NREFINE="${NREFINE:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$nRefinementSteps)")}"
 
 EXPERIMENT_ROOT="$DIR_MAIN/experiments/$TIMESTEP/$EXPERIMENT"
 
@@ -99,7 +107,7 @@ for EXPERIMENT_DIR in "${splits[@]}"; do
 
   job_id=$(
     sbatch \
-      --export=ALL,DIR_MAIN="$DIR_MAIN",EXPERIMENT_DIR="$EXPERIMENT_DIR",ZDECISION="$ZDECISION",NREFINE="$NREFINE" \
+      --export=ALL,DIR_MAIN="$DIR_MAIN",CONFIG_FILE="$CONFIG_FILE",EXPERIMENT_DIR="$EXPERIMENT_DIR",ZDECISION="$ZDECISION",NREFINE="$NREFINE" \
       "$SLURM_SCRIPT" \
       | awk '{print $4}'
   )

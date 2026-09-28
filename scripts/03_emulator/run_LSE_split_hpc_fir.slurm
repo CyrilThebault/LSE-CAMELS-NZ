@@ -41,10 +41,11 @@ export OMP_THREAD_LIMIT=1
 # ==============================================================================
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
+CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
 EXPERIMENT_DIR="${EXPERIMENT_DIR:?Set EXPERIMENT_DIR to one split directory}"
 
-ZDECISION="${ZDECISION:-$(Rscript -e "source('${DIR_MAIN}/config/experiment.R'); cat(experiment\$zDecision)")}"
-NREFINE="${NREFINE:-$(Rscript -e "source('${DIR_MAIN}/config/experiment.R'); cat(experiment\$nRefinementSteps)")}"
+ZDECISION="${ZDECISION:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$zDecision)")}"
+NREFINE="${NREFINE:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$nRefinementSteps)")}"
 
 NCORES="${SLURM_CPUS_PER_TASK:-10}"
 
@@ -66,11 +67,11 @@ mkdir -p "$TMP_BASE"
 # used only for evaluation and never feed back into model training.
 # ==============================================================================
 
-Rscript "$DIR_MAIN/scripts/03_emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" 0 "$NCORES" "$DIR_MAIN"
+Rscript "$DIR_MAIN/scripts/03_emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" 0 "$NCORES" "$CONFIG_FILE" "$DIR_MAIN"
 
-parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
+parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$CONFIG_FILE" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
 
-parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$TMP_BASE/test_{}" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
+parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$TMP_BASE/test_{}" "$CONFIG_FILE" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
 
 # ==============================================================================
 # Iterative refinement
@@ -82,17 +83,17 @@ parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator
 
 for ((step = 0; step < NREFINE; step++)); do
 
-  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$step" train "$DIR_MAIN" :::: "$EXPERIMENT_DIR/train_basins.txt"
+  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$step" train "$CONFIG_FILE" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/train_basins.txt"
 
-  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$step" train "$TMP_BASE/train_{}" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/train_basins.txt"
+  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$step" train "$TMP_BASE/train_{}" "$CONFIG_FILE" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/train_basins.txt"
 
   next=$((step + 1))
 
-  Rscript "$DIR_MAIN/scripts/03_emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" "$next" "$NCORES" "$DIR_MAIN"
+  Rscript "$DIR_MAIN/scripts/03_emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" "$next" "$NCORES" "$CONFIG_FILE" "$DIR_MAIN"
 
   # Evaluate the newly refined emulator on test basins.
-  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
+  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$CONFIG_FILE" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
 
-  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$TMP_BASE/test_{}" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
+  parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/03_emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$TMP_BASE/test_{}" "$CONFIG_FILE" "$DIR_MAIN" :::: "$EXPERIMENT_DIR/test_basins.txt"
 
 done

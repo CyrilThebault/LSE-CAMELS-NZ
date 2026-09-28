@@ -13,8 +13,9 @@ export MKL_NUM_THREADS=1
 # ==============================================================================
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
+CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
 
-ZDECISION="${ZDECISION:-$(Rscript -e "source('${DIR_MAIN}/config/experiment.R'); cat(experiment\$zDecision)")}"
+ZDECISION="${ZDECISION:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$zDecision)")}"
 
 NCORES="${NCORES:-4}"
 
@@ -33,4 +34,4 @@ mkdir -p "$TMP_BASE"
 # concurrent model runs.
 # ==============================================================================
 
-parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/02_iter0/01_run_iter0.R" {} "$ZDECISION" "$TMP_BASE/{}" "$DIR_MAIN" :::: "$DIR_MAIN/config/basins.txt"
+parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/02_iter0/01_run_iter0.R" {} "$ZDECISION" "$TMP_BASE/{}" "$CONFIG_FILE" "$DIR_MAIN" :::: "$DIR_MAIN/config/basins.txt"

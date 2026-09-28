@@ -13,20 +13,20 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 2L) {
-  stop("Usage: Rscript 01_prepare_CAMELS_NZ.R <basinID|ALL> <dirMain>")
+if (length(args) != 3L) {
+  stop("Usage: Rscript 01_prepare_CAMELS_NZ.R <basinID|ALL> <config_file> <dirMain>")
 }
 
 basin_arg <- args[1]
-dirMain <- normalizePath(args[2], mustWork = TRUE)
+config_file <- normalizePath(args[2], mustWork = TRUE)
+dirMain <- normalizePath(args[3], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(dirMain)
+experiment <- load_workflow_config(config_file)
 time_info <- get_timestep_info(experiment)
 paths <- project_paths(dirMain, experiment)
-
 suppressPackageStartupMessages(library(ncdf4))
 
 
