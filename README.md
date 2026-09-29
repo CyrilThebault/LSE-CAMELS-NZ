@@ -565,6 +565,73 @@ where `scenario_x` is the first experiment supplied on the command line and
 performance for the second scenario, while negative values indicate better
 performance for the first scenario.
 
+## 8. Build the observed flood-event catalogue
+
+Observed flood events are detected once from the hourly observed discharge
+record and are subsequently used for both hourly and daily flood-performance
+analyses. Flood events are therefore not re-detected independently at each
+modelling time step.
+
+The catalogue is built from the observed discharge stored in:
+
+```text
+data/forcings/hourly/<ID>/<ID>_input.nc
+```
+
+for the catchments listed in:
+
+```text
+config/basins.txt
+```
+
+The detection procedure uses smoothed observed discharge to estimate baseflow
+and quickflow, identifies candidate quickflow events with `hydroEvents`, retains
+candidates whose aligned raw observed discharge exceeds the basin-specific Q99
+threshold, and defines the final event boundaries using a baseflow-index
+threshold of 0.95.
+
+The resulting catalogue is written to:
+
+```text
+data/flood/
+├── observed_flood_catalogue.csv
+└── diagnostics/
+    ├── observed_flood_candidates.csv
+    ├── observed_flood_excluded.csv
+    └── observed_flood_summary.csv
+```
+
+The catalogue is canonical: the same observed `event_id` values are used for
+both hourly and daily flood-performance analyses.
+
+Flood detection is parallelised by catchment. The number of workers is
+controlled by `NCORES` locally and by `SLURM_CPUS_PER_TASK` on HPC.
+
+### On a local machine
+
+```bash
+export DIR_MAIN="$PWD"
+export NCORES=4
+
+bash scripts/05_analysis/floods/01_build_observed_flood_catalogue_local.sh
+```
+
+### On ARC HPC
+
+```bash
+export DIR_MAIN="$PWD"
+
+sbatch scripts/05_analysis/floods/01_build_observed_flood_catalogue_hpc_arc.slurm
+```
+
+### On FIR HPC
+
+```bash
+export DIR_MAIN="$PWD"
+
+sbatch scripts/05_analysis/floods/01_build_observed_flood_catalogue_hpc_fir.slurm
+```
+
 ## Important implementation notes
 
 - `outputs/<timestep>/iter0/` is shared by all experiments at a given temporal

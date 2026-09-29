@@ -212,6 +212,35 @@ file.
 The emulator can then be trained and evaluated using the workflow described in
 the main repository README.
 
+## Testing the observed flood-event catalogue
+
+The five test catchments can also be used to test the observed flood-event
+catalogue workflow. Flood events are always detected from the hourly observed
+discharge, independently of the temporal resolution selected for the emulator
+experiment.
+
+After copying the testcase `config/` and `data/` directories into the repository
+root, run:
+
+```bash
+export DIR_MAIN="$PWD"
+export NCORES=4
+
+bash scripts/05_analysis/floods/01_build_observed_flood_catalogue_local.sh
+```
+
+The resulting catalogue and diagnostics are written to:
+
+```text
+data/flood/
+├── observed_flood_catalogue.csv
+└── diagnostics/
+```
+
+The test case is intended to verify that the catalogue-building workflow runs
+successfully; its small set of five catchments is not intended for scientific
+evaluation of regional flood behaviour.
+
 ## Purpose of the test case
 
 This dataset is intended for demonstration and testing only.
