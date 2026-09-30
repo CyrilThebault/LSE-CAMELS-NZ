@@ -632,6 +632,80 @@ export DIR_MAIN="$PWD"
 sbatch scripts/05_analysis/floods/01_build_observed_flood_catalogue_hpc_fir.slurm
 ```
 
+## 9. Review the observed flood-event catalogue
+
+The observed flood catalogue can be reviewed visually using one diagnostic PDF
+per catchment. This step does not modify or re-detect flood events: it only
+visualises the canonical catalogue produced in Step 8.
+
+The review combines the flood catalogue and diagnostics with the hourly observed
+discharge and spatial information from:
+
+```text
+shapefiles/
+├── camel_stationsNZ.*
+├── nz.*
+└── All_Nested_Catchments.*
+```
+
+Each catchment PDF contains a summary page with station and record information,
+catchment maps, catalogue statistics, and event-distribution diagnostics,
+followed by hydrographs for all detected flood events. Event hydrographs show
+the raw observed discharge, event window, Q99 threshold, observed peak, and
+candidate Q99 peaks.
+
+Review PDFs are written to:
+
+```text
+data/flood/review/<ID>_observed_flood_review.pdf
+```
+
+Review generation is parallelised by catchment. `NCORES` controls the number of
+basins processed concurrently.
+
+### On a local machine
+
+```bash
+export DIR_MAIN="$PWD"
+export NCORES=4
+
+bash scripts/05_analysis/floods/02_review_observed_flood_catalogue_local.sh
+```
+
+A subset of basins can be reviewed with `BASIN_IDS`, for example:
+
+```bash
+export DIR_MAIN="$PWD"
+export BASIN_IDS=802
+export NCORES=1
+
+bash scripts/05_analysis/floods/02_review_observed_flood_catalogue_local.sh
+```
+
+### On ARC HPC
+
+```bash
+export DIR_MAIN="$PWD"
+
+sbatch scripts/05_analysis/floods/02_review_observed_flood_catalogue_hpc_arc.slurm
+```
+
+For a single-basin test:
+
+```bash
+sbatch \
+  --export=ALL,DIR_MAIN="$PWD",BASIN_IDS=802,NCORES=1 \
+  scripts/05_analysis/floods/02_review_observed_flood_catalogue_hpc_arc.slurm
+```
+
+### On FIR HPC
+
+```bash
+export DIR_MAIN="$PWD"
+
+sbatch scripts/05_analysis/floods/02_review_observed_flood_catalogue_hpc_fir.slurm
+```
+
 ## Important implementation notes
 
 - `outputs/<timestep>/iter0/` is shared by all experiments at a given temporal
