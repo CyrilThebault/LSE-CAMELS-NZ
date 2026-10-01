@@ -98,7 +98,7 @@ BFI_Th <- 0.95
 Qprob <- 0.99
 
 # Version label written to the catalogue for reproducibility.
-method <- "hourly_Q99_BFI095_v1"
+method <- "hourly_Q99_BFI095_v2"
 
 
 cat("\n===== OBSERVED HOURLY FLOOD CATALOGUE =====\n\n")
@@ -252,6 +252,15 @@ process_basin <- function(ID) {
     if (any(!is.finite(qs))) next
 
     bf <- baseflowA(qs, alpha = alpha)
+
+    # BFI used for event segmentation only.
+    # When discharge is zero, baseflowA() can return a non-finite BFI
+    # because both baseflow and discharge are zero. Zero flow represents
+    # a no-event/baseflow state, so set these values to 1 for segmentation.
+    # Keep bf$bfi unchanged for diagnostic output.
+    bfi_event <- bf$bfi
+    zero_bfi <- !is.finite(bfi_event) & qs == 0
+    bfi_event[zero_bfi] <- 1
     qf <- qs - bf$bf
 
     # eventMaxima() requires at least two local minima to define an event.
@@ -281,7 +290,7 @@ process_basin <- function(ID) {
     eb <- eventBaseflow(
       data = qs,
       BFI_Th = BFI_Th,
-      bfi = bf$bfi,
+      bfi = bfi_event,
       min.length = 1,
       out.style = "none"
     )
@@ -376,7 +385,7 @@ process_basin <- function(ID) {
       # Unmatched candidate: keep diagnostic and exclusion reason
       # ------------------------------------------------------------------------
 
-      baseind <- which(bf$bfi > BFI_Th)
+      baseind <- which(bfi_event > BFI_Th)
 
       before <- baseind[baseind < peak]
       after <- baseind[baseind > peak]
@@ -384,7 +393,7 @@ process_basin <- function(ID) {
       has_before <- length(before) > 0
       has_after <- length(after) > 0
 
-      bfi_peak <- bf$bfi[peak]
+      bfi_peak <- bfi_event[peak]
 
       reason <- if (length(m) > 1) {
         "multiple_bfi95_matches"
@@ -413,7 +422,7 @@ process_basin <- function(ID) {
         eventmax_duration_h = as.numeric(
           difftime(ts[end], ts[srt], units = "hours")
         ),
-        bfi_at_candidate = bfi_peak,
+        bfi_at_candidate = bf$bfi[peak],
         n_bfi_matches = length(m),
         has_bfi95_before = has_before,
         hours_since_bfi95 = if (has_before) peak - max(before) else NA,
