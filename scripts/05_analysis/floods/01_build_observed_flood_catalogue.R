@@ -7,7 +7,7 @@
 # Method:
 #   Qobs -> smoothing -> baseflow -> quickflow -> eventMaxima
 #        -> aligned Q99 selection -> BFI95 event boundaries
-#        -> deduplication -> observed flood catalogue
+#        -> deduplication -> high-flow fragment merge -> observed flood catalogue
 #
 # The resulting catalogue is canonical and is subsequently used to evaluate
 # both hourly and daily experiments on the same observed floods.
@@ -97,8 +97,12 @@ BFI_Th <- 0.95
 # flood events.
 Qprob <- 0.99
 
+# Adjacent BFI95 fragments are merged when the inter-fragment valley remains
+# above Q99 and at least 90% of the smaller fragment peak.
+merge_ratio_threshold <- 0.90
+
 # Version label written to the catalogue for reproducibility.
-method <- "hourly_Q99_BFI095_v2"
+method <- "hourly_Q99_BFI095_v3"
 
 
 cat("\n===== OBSERVED HOURLY FLOOD CATALOGUE =====\n\n")
@@ -476,6 +480,209 @@ process_basin <- function(ID) {
   }
 
   # --------------------------------------------------------------------------
+  # Merge adjacent retained BFI95 fragments belonging to the same flood
+  #
+  # Two adjacent fragments are merged when:
+  #   1. they belong to the same finite-data block;
+  #   2. raw Qobs never falls below Q99 between them;
+  #   3. the inter-fragment valley remains at least 90% of the smaller
+  #      of the two fragment peaks.
+  #
+  # Consecutive merge edges are collapsed transitively into one event.
+  # --------------------------------------------------------------------------
+
+  if (nrow(bfi_events)) {
+
+    bfi_events <- bfi_events[
+      order(
+        bfi_events$block_id,
+        bfi_events$bfi_start
+      ),
+      ,
+      drop = FALSE
+    ]
+
+    row.names(bfi_events) <- NULL
+
+    # Raw-Q peak for each provisional BFI95 fragment.
+    fragment_peak_q <- vapply(
+      seq_len(nrow(bfi_events)),
+      function(i) {
+
+        idx <- which(
+          time >= bfi_events$bfi_start[i] &
+            time <= bfi_events$bfi_end[i]
+        )
+
+        stopifnot(
+          length(idx) > 0L,
+          all(is.finite(q[idx]))
+        )
+
+        max(q[idx])
+      },
+      numeric(1)
+    )
+
+    # TRUE means that fragment i and fragment i + 1 belong to the same flood.
+    merge_edge <- rep(
+      FALSE,
+      max(0L, nrow(bfi_events) - 1L)
+    )
+
+    if (nrow(bfi_events) >= 2L) {
+
+      for (i in seq_len(nrow(bfi_events) - 1L)) {
+
+        a <- bfi_events[i, , drop = FALSE]
+        b <- bfi_events[i + 1L, , drop = FALSE]
+
+        # Never merge across finite-data blocks.
+        if (a$block_id != b$block_id) {
+          next
+        }
+
+        stopifnot(
+          isTRUE(
+            all.equal(
+              a$q99,
+              b$q99,
+              tolerance = 1e-12
+            )
+          ),
+          a$bfi_end <= b$bfi_start
+        )
+
+        idx_bridge <- which(
+          time >= a$bfi_end &
+            time <= b$bfi_start
+        )
+
+        stopifnot(
+          length(idx_bridge) > 0L,
+          all(is.finite(q[idx_bridge]))
+        )
+
+        valley_q <- min(
+          q[idx_bridge]
+        )
+
+        smaller_peak_q <- min(
+          fragment_peak_q[i],
+          fragment_peak_q[i + 1L]
+        )
+
+        valley_over_smaller_peak <- (
+          valley_q / smaller_peak_q
+        )
+
+        merge_edge[i] <- (
+          valley_q > a$q99 &&
+            valley_over_smaller_peak >= merge_ratio_threshold
+        )
+      }
+    }
+
+    # ------------------------------------------------------------------------
+    # Convert retained merge edges into transitive group IDs.
+    #
+    # Example:
+    #
+    #   F1 --TRUE-- F2 --TRUE-- F3 --FALSE-- F4
+    #
+    # becomes:
+    #
+    #   group 1: F1 F2 F3
+    #   group 2: F4
+    # ------------------------------------------------------------------------
+
+    merge_group <- integer(
+      nrow(bfi_events)
+    )
+
+    merge_group[1] <- 1L
+
+    if (nrow(bfi_events) >= 2L) {
+
+      for (i in 2:nrow(bfi_events)) {
+
+        if (merge_edge[i - 1L]) {
+
+          merge_group[i] <- merge_group[i - 1L]
+
+        } else {
+
+          merge_group[i] <- merge_group[i - 1L] + 1L
+        }
+      }
+    }
+
+    bfi_events$merge_group <- merge_group
+
+    # Preserve original BFI95 fragment IDs in candidates and map each
+    # candidate to its final merged event.
+    merge_map <- bfi_events[
+      ,
+      c(
+        "bfi_event_id",
+        "merge_group"
+      ),
+      drop = FALSE
+    ]
+
+    candidates$merge_group <- merge_map$merge_group[
+      match(
+        candidates$bfi_event_id,
+        merge_map$bfi_event_id
+      )
+    ]
+
+    stopifnot(
+      all(is.finite(candidates$merge_group))
+    )
+
+    # ------------------------------------------------------------------------
+    # Collapse provisional BFI95 fragments into final merged windows.
+    # ------------------------------------------------------------------------
+
+    groups <- split(
+      seq_len(nrow(bfi_events)),
+      bfi_events$merge_group
+    )
+
+    merged_bfi_events <- lapply(
+      groups,
+      function(ii) {
+
+        z <- bfi_events[
+          ii,
+          ,
+          drop = FALSE
+        ]
+
+        data.frame(
+          ID = ID,
+          block_id = z$block_id[1],
+          merge_group = z$merge_group[1],
+          bfi_start = min(z$bfi_start),
+          bfi_end = max(z$bfi_end),
+          q99 = z$q99[1],
+          n_bfi_fragments = nrow(z),
+          stringsAsFactors = FALSE
+        )
+      }
+    )
+
+    bfi_events <- do.call(
+      rbind,
+      merged_bfi_events
+    )
+
+    row.names(bfi_events) <- NULL
+  }
+
+
+  # --------------------------------------------------------------------------
   # Build final observed-event catalogue
   # --------------------------------------------------------------------------
 
@@ -488,7 +695,7 @@ process_basin <- function(ID) {
       ev <- bfi_events[i, , drop = FALSE]
 
       cand <- candidates[
-        candidates$bfi_event_id == ev$bfi_event_id,
+        candidates$merge_group == ev$merge_group,
         ,
         drop = FALSE
       ]
@@ -539,6 +746,8 @@ process_basin <- function(ID) {
         q99 = ev$q99,
         peak_over_q99 = peak_q_obs / ev$q99,
         n_q99_candidates = n_candidates,
+        n_bfi_fragments = ev$n_bfi_fragments,
+        merge_ratio_threshold = merge_ratio_threshold,
         first_candidate_time = min(cand$candidate_time),
         last_candidate_time = max(cand$candidate_time),
         valid_hours_in_event = length(idx),
@@ -583,9 +792,13 @@ process_basin <- function(ID) {
     q99_candidates = nrow(candidates) + nrow(excluded),
     matched_candidates = nrow(candidates),
     excluded_candidates = nrow(excluded),
-    unique_BFI95_events = nrow(catalogue),
-    duplicate_Q99_candidates = nrow(candidates) - nrow(catalogue),
-    multi_peak_BFI95_events = if (nrow(catalogue)) {
+    observed_flood_events = nrow(catalogue),
+    merged_flood_events = if (nrow(catalogue)) {
+      sum(catalogue$n_bfi_fragments > 1)
+    } else {
+      0L
+    },
+    multiple_q99_peak_events = if (nrow(catalogue)) {
       sum(catalogue$n_q99_candidates > 1)
     } else {
       0L
@@ -658,12 +871,20 @@ cat("\n===== FINAL DIAGNOSTICS =====\n\n")
 cat("Q99 eventMaxima candidates :", n_candidates, "\n")
 cat("Matched to BFI95           :", n_matched, "\n")
 cat("Excluded candidates        :", n_excluded, "\n")
-cat("Unique BFI95 events        :", n_events, "\n")
+cat("Observed flood events       :", n_events, "\n")
+cat(
+  "Merged flood events         :",
+  sum(catalogue$n_bfi_fragments > 1),
+  "\n"
+)
 
-cat("\n===== Q99 PEAKS PER BFI95 EVENT =====\n\n")
+cat("\n===== Q99 PEAKS PER OBSERVED FLOOD EVENT =====\n\n")
 print(table(catalogue$n_q99_candidates))
 
-cat("\n===== BFI95 EVENT DURATIONS [h] =====\n\n")
+cat("\n===== BFI95 FRAGMENTS PER OBSERVED FLOOD EVENT =====\n\n")
+print(table(catalogue$n_bfi_fragments))
+
+cat("\n===== OBSERVED FLOOD EVENT DURATIONS [h] =====\n\n")
 print(
   quantile(
     catalogue$duration_h,
