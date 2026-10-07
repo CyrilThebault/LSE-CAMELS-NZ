@@ -7,7 +7,11 @@
 # Method:
 #   Qobs -> smoothing -> baseflow -> quickflow -> eventMaxima
 #        -> aligned Q99 selection -> BFI95 event boundaries
-#        -> deduplication -> high-flow fragment merge -> observed flood catalogue
+#        -> BFI95-fragment consolidation
+#        -> adjacent high-flow event merge
+#        -> sustained Q99 recession boundary
+#        -> non-overlapping hourly event windows
+#        -> observed flood catalogue
 #
 # The resulting catalogue is canonical and is subsequently used to evaluate
 # both hourly and daily experiments on the same observed floods.
@@ -72,37 +76,18 @@ ncores <- min(ncores, length(basins))
 # Method parameters
 # ==============================================================================
 
-# Recursive baseflow filter used by hydroEvents::baseflowA(). alpha = 0.925
-# follows the hydroEvents hourly example and controls the smoothness/persistence
-# of the estimated baseflow.
 alpha <- 0.925
-
-# hydroEvents::eventMaxima() parameters used to identify candidate quickflow
-# peaks. delta_y = -0.75 requires a 75% relative drop between neighbouring
-# peaks, while delta_x = 12 corresponds to 12 hourly time steps. These values
-# follow the hydroEvents hourly example and are kept fixed rather than calibrated
-# to individual CAMELS-NZ catchments.
 delta_y <- -0.75
 delta_x <- 12
 
-# Baseflow-index threshold used to define the final hydrological event bounds.
-# BFI_Th = 0.95 was retained after visual inspection across representative
-# CAMELS-NZ catchments: it generally captures the full rise and recession while
-# grouping multiple Q99 sub-peaks belonging to the same flood event.
 BFI_Th <- 0.95
-
-# Basin-specific discharge threshold used to retain only extreme-flow
-# candidates. Q99 was selected after comparing Q95, Q97.5 and Q99 across the
-# benchmark catchments; Q99 reduced event fragmentation while retaining clear
-# flood events.
 Qprob <- 0.99
 
-# Adjacent BFI95 fragments are merged when the inter-fragment valley remains
-# above Q99 and at least 90% of the smaller fragment peak.
-merge_ratio_threshold <- 0.90
+merge_ratio <- 0.90
+merge_gap_h <- 12
+recovery_h <- 12L
 
-# Version label written to the catalogue for reproducibility.
-method <- "hourly_Q99_BFI095_v3"
+method <- "hourly_Q99_BFI095_v4"
 
 
 cat("\n===== OBSERVED HOURLY FLOOD CATALOGUE =====\n\n")
@@ -110,7 +95,8 @@ cat("dirMain :", dirMain, "\n")
 cat("dirOut  :", dirOut, "\n")
 cat("dirDiag :", dirDiag, "\n")
 cat("Basins  :", length(basins), "\n")
-cat("Cores   :", ncores, "\n\n")
+cat("Cores   :", ncores, "\n")
+cat("Method  :", method, "\n\n")
 
 
 # ==============================================================================
@@ -127,7 +113,7 @@ decode_time <- function(x, units) {
     )
   )[[1]]
 
-  stopifnot(length(z) == 3)
+  stopifnot(length(z) == 3L)
 
   origin <- sub(
     "\\s+(UTC|GMT)$", "", trimws(z[3]),
@@ -138,8 +124,8 @@ decode_time <- function(x, units) {
     tolower(z[2]),
     seconds = 1,
     minutes = 60,
-    hours   = 3600,
-    days    = 86400
+    hours = 3600,
+    days = 86400
   )
 
   as.POSIXct(origin, tz = "UTC") + x * mult
@@ -151,7 +137,6 @@ get_blocks <- function(ok) {
 
   i2 <- cumsum(r$lengths)
   i1 <- i2 - r$lengths + 1L
-
   k <- which(r$values)
 
   data.frame(
@@ -212,6 +197,36 @@ bind_result <- function(results, name) {
 }
 
 
+make_groups <- function(n, merge_edge) {
+  if (!n) {
+    return(integer(0))
+  }
+
+  group <- integer(n)
+  group[1] <- 1L
+
+  if (n >= 2L) {
+    for (i in 2:n) {
+      group[i] <- group[i - 1L] + as.integer(!merge_edge[i - 1L])
+    }
+  }
+
+  group
+}
+
+
+raw_peak <- function(start, end, time, q) {
+  idx <- which(time >= start & time <= end)
+
+  stopifnot(
+    length(idx) > 0L,
+    all(is.finite(q[idx]))
+  )
+
+  max(q[idx])
+}
+
+
 # ==============================================================================
 # 3. Process one basin
 # ==============================================================================
@@ -219,18 +234,25 @@ bind_result <- function(results, name) {
 process_basin <- function(ID) {
   ID <- as.character(ID)
   ib <- match(ID, basins)
+
   cat(sprintf("[%03d/%03d] basin %s\n", ib, length(basins), ID))
 
   dat <- read_basin(ID)
+
   q <- dat$q
   time <- dat$time
   q99 <- dat$q99
 
   candidates <- list()
   excluded <- list()
-  bfi_events <- list()
+  fragments <- list()
 
   blocks <- get_blocks(is.finite(q))
+
+
+  # --------------------------------------------------------------------------
+  # Detect Q99 candidates and their BFI95 fragments
+  # --------------------------------------------------------------------------
 
   for (bb in seq_len(nrow(blocks))) {
     block_id <- blocks$block_id[bb]
@@ -241,42 +263,38 @@ process_basin <- function(ID) {
     tb <- time[i1:i2]
 
     n <- length(qb)
-    if (n < 10) next
 
-    # --------------------------------------------------------------------------
-    # Smooth Q, estimate baseflow and derive quickflow
-    # --------------------------------------------------------------------------
+    if (n < 10L) {
+      next
+    }
 
     qs <- as.numeric(
-      stats::filter(qb, c(0.1, 0.2, 0.4, 0.2, 0.1))[3:(n - 2)]
+      stats::filter(
+        qb,
+        c(0.1, 0.2, 0.4, 0.2, 0.1)
+      )[3:(n - 2L)]
     )
 
-    ts <- tb[3:(n - 2)]
+    ts <- tb[3:(n - 2L)]
 
-    if (any(!is.finite(qs))) next
+    if (any(!is.finite(qs))) {
+      next
+    }
 
     bf <- baseflowA(qs, alpha = alpha)
 
-    # BFI used for event segmentation only.
-    # When discharge is zero, baseflowA() can return a non-finite BFI
-    # because both baseflow and discharge are zero. Zero flow represents
-    # a no-event/baseflow state, so set these values to 1 for segmentation.
-    # Keep bf$bfi unchanged for diagnostic output.
+    # baseflowA() may return non-finite BFI when both Q and baseflow are zero.
+    # Zero flow is treated as a baseflow/no-event state for segmentation.
     bfi_event <- bf$bfi
     zero_bfi <- !is.finite(bfi_event) & qs == 0
     bfi_event[zero_bfi] <- 1
+
     qf <- qs - bf$bf
 
-    # eventMaxima() requires at least two local minima to define an event.
-    # hydroEvents::calcStats() does not handle the zero-interval case, so blocks
-    # with fewer than two minima cannot contain an eventMaxima event and are skipped.
+    # eventMaxima() requires at least two local minima.
     if (length(hydroEvents::localMin(qf)) < 2L) {
       next
     }
-    
-    # --------------------------------------------------------------------------
-    # Candidate events from quickflow
-    # --------------------------------------------------------------------------
 
     em <- eventMaxima(
       qf,
@@ -285,11 +303,9 @@ process_basin <- function(ID) {
       threshold = 0
     )
 
-    if (is.null(em) || !nrow(em)) next
-
-    # --------------------------------------------------------------------------
-    # BFI95 events
-    # --------------------------------------------------------------------------
+    if (is.null(em) || !nrow(em)) {
+      next
+    }
 
     eb <- eventBaseflow(
       data = qs,
@@ -309,24 +325,24 @@ process_basin <- function(ID) {
       )
     }
 
-    # --------------------------------------------------------------------------
-    # Q99 selection at the eventMaxima quickflow peak
-    # --------------------------------------------------------------------------
-
     for (j in seq_len(nrow(em))) {
       srt <- as.integer(em$srt[j])
       end <- as.integer(em$end[j])
       peak <- as.integer(em$which.max[j])
 
       if (
-        srt < 1 ||
+        srt < 1L ||
         end > length(qs) ||
-        peak < 1 ||
+        peak < 1L ||
         peak > length(qs)
-      ) next
+      ) {
+        next
+      }
 
-      # Do not retain eventMaxima events touching a finite-data block edge.
-      if (srt <= 1 || end >= length(qs)) next
+      # Events touching the smoothed finite-data block edge are censored.
+      if (srt <= 1L || end >= length(qs)) {
+        next
+      }
 
       peak_time <- ts[peak]
 
@@ -336,11 +352,9 @@ process_basin <- function(ID) {
       if (
         !is.finite(q_peak_aligned) ||
         q_peak_aligned <= q99
-      ) next
-
-      # ------------------------------------------------------------------------
-      # Match Q99 candidate to BFI95 event
-      # ------------------------------------------------------------------------
+      ) {
+        next
+      }
 
       m <- integer(0)
 
@@ -351,7 +365,7 @@ process_basin <- function(ID) {
         )
       }
 
-      if (length(m) == 1) {
+      if (length(m) == 1L) {
         z <- eb[m, , drop = FALSE]
 
         candidates[[length(candidates) + 1L]] <- data.frame(
@@ -373,33 +387,29 @@ process_basin <- function(ID) {
           q99 = q99
         )
 
-        bfi_events[[length(bfi_events) + 1L]] <- data.frame(
+        fragments[[length(fragments) + 1L]] <- data.frame(
           ID = ID,
           block_id = block_id,
           bfi_event_id = z$bfi_event_id,
-          bfi_start = z$start_time,
-          bfi_end = z$end_time,
+          start = z$start_time,
+          end = z$end_time,
           q99 = q99
         )
 
         next
       }
 
-      # ------------------------------------------------------------------------
-      # Unmatched candidate: keep diagnostic and exclusion reason
-      # ------------------------------------------------------------------------
-
       baseind <- which(bfi_event > BFI_Th)
 
       before <- baseind[baseind < peak]
       after <- baseind[baseind > peak]
 
-      has_before <- length(before) > 0
-      has_after <- length(after) > 0
+      has_before <- length(before) > 0L
+      has_after <- length(after) > 0L
 
       bfi_peak <- bfi_event[peak]
 
-      reason <- if (length(m) > 1) {
+      reason <- if (length(m) > 1L) {
         "multiple_bfi95_matches"
       } else if (
         is.finite(bfi_peak) &&
@@ -434,7 +444,7 @@ process_basin <- function(ID) {
         hours_until_bfi95 = if (has_after) min(after) - peak else NA,
         hours_from_block_start = peak - 1L,
         hours_to_block_end = length(qs) - peak,
-        block_start_reason = if (i1 > 1) {
+        block_start_reason = if (i1 > 1L) {
           "missing_data_gap"
         } else {
           "dataset_start"
@@ -449,9 +459,6 @@ process_basin <- function(ID) {
     }
   }
 
-  # --------------------------------------------------------------------------
-  # Deduplicate BFI95 events
-  # --------------------------------------------------------------------------
 
   candidates <- if (length(candidates)) {
     do.call(rbind, candidates)
@@ -465,53 +472,84 @@ process_basin <- function(ID) {
     data.frame()
   }
 
-  bfi_events <- if (length(bfi_events)) {
-    do.call(rbind, bfi_events)
+  fragments <- if (length(fragments)) {
+    do.call(rbind, fragments)
   } else {
     data.frame()
   }
 
-  if (nrow(bfi_events)) {
-    bfi_events <- bfi_events[
-      !duplicated(bfi_events$bfi_event_id),
+  if (nrow(fragments)) {
+    fragments <- fragments[
+      !duplicated(fragments$bfi_event_id),
       ,
       drop = FALSE
     ]
-  }
 
-  # --------------------------------------------------------------------------
-  # Merge adjacent retained BFI95 fragments belonging to the same flood
-  #
-  # Two adjacent fragments are merged when:
-  #   1. they belong to the same finite-data block;
-  #   2. raw Qobs never falls below Q99 between them;
-  #   3. the inter-fragment valley remains at least 90% of the smaller
-  #      of the two fragment peaks.
-  #
-  # Consecutive merge edges are collapsed transitively into one event.
-  # --------------------------------------------------------------------------
-
-  if (nrow(bfi_events)) {
-
-    bfi_events <- bfi_events[
+    fragments <- fragments[
       order(
-        bfi_events$block_id,
-        bfi_events$bfi_start
+        fragments$block_id,
+        fragments$start
       ),
       ,
       drop = FALSE
     ]
 
-    row.names(bfi_events) <- NULL
+    rownames(fragments) <- NULL
+  }
 
-    # Raw-Q peak for each provisional BFI95 fragment.
-    fragment_peak_q <- vapply(
-      seq_len(nrow(bfi_events)),
+
+  # --------------------------------------------------------------------------
+  # Consolidate retained BFI95 fragments
+  #
+  # Adjacent fragments are combined when Qobs remains above Q99 throughout
+  # the bridge and the bridge minimum remains at least merge_ratio of the
+  # smaller adjacent fragment peak.
+  # --------------------------------------------------------------------------
+
+  initial_events <- data.frame()
+
+  if (nrow(fragments)) {
+    fragment_peak <- vapply(
+      seq_len(nrow(fragments)),
       function(i) {
+        raw_peak(
+          fragments$start[i],
+          fragments$end[i],
+          time,
+          q
+        )
+      },
+      numeric(1)
+    )
+
+    fragment_merge <- rep(
+      FALSE,
+      max(0L, nrow(fragments) - 1L)
+    )
+
+    if (nrow(fragments) >= 2L) {
+      for (i in seq_len(nrow(fragments) - 1L)) {
+        a <- fragments[i, , drop = FALSE]
+        b <- fragments[i + 1L, , drop = FALSE]
+
+        if (a$block_id != b$block_id) {
+          next
+        }
+
+        stopifnot(
+          a$end <= b$start,
+          isTRUE(
+            all.equal(
+              a$q99,
+              b$q99,
+              tolerance = 1e-12
+            )
+          )
+        )
 
         idx <- which(
-          time >= bfi_events$bfi_start[i] &
-            time <= bfi_events$bfi_end[i]
+          time >= a$end &
+            time <= b$start
         )
 
         stopifnot(
@@ -519,153 +557,49 @@ process_basin <- function(ID) {
           all(is.finite(q[idx]))
         )
 
-        max(q[idx])
-      },
-      numeric(1)
-    )
-
-    # TRUE means that fragment i and fragment i + 1 belong to the same flood.
-    merge_edge <- rep(
-      FALSE,
-      max(0L, nrow(bfi_events) - 1L)
-    )
-
-    if (nrow(bfi_events) >= 2L) {
-
-      for (i in seq_len(nrow(bfi_events) - 1L)) {
-
-        a <- bfi_events[i, , drop = FALSE]
-        b <- bfi_events[i + 1L, , drop = FALSE]
-
-        # Never merge across finite-data blocks.
-        if (a$block_id != b$block_id) {
-          next
-        }
-
-        stopifnot(
-          isTRUE(
-            all.equal(
-              a$q99,
-              b$q99,
-              tolerance = 1e-12
-            )
-          ),
-          a$bfi_end <= b$bfi_start
+        valley_q <- min(q[idx])
+        smaller_peak <- min(
+          fragment_peak[i],
+          fragment_peak[i + 1L]
         )
 
-        idx_bridge <- which(
-          time >= a$bfi_end &
-            time <= b$bfi_start
-        )
-
-        stopifnot(
-          length(idx_bridge) > 0L,
-          all(is.finite(q[idx_bridge]))
-        )
-
-        valley_q <- min(
-          q[idx_bridge]
-        )
-
-        smaller_peak_q <- min(
-          fragment_peak_q[i],
-          fragment_peak_q[i + 1L]
-        )
-
-        valley_over_smaller_peak <- (
-          valley_q / smaller_peak_q
-        )
-
-        merge_edge[i] <- (
+        fragment_merge[i] <- (
           valley_q > a$q99 &&
-            valley_over_smaller_peak >= merge_ratio_threshold
+            valley_q / smaller_peak >= merge_ratio
         )
       }
     }
 
-    # ------------------------------------------------------------------------
-    # Convert retained merge edges into transitive group IDs.
-    #
-    # Example:
-    #
-    #   F1 --TRUE-- F2 --TRUE-- F3 --FALSE-- F4
-    #
-    # becomes:
-    #
-    #   group 1: F1 F2 F3
-    #   group 2: F4
-    # ------------------------------------------------------------------------
-
-    merge_group <- integer(
-      nrow(bfi_events)
+    fragments$fragment_group <- make_groups(
+      nrow(fragments),
+      fragment_merge
     )
 
-    merge_group[1] <- 1L
-
-    if (nrow(bfi_events) >= 2L) {
-
-      for (i in 2:nrow(bfi_events)) {
-
-        if (merge_edge[i - 1L]) {
-
-          merge_group[i] <- merge_group[i - 1L]
-
-        } else {
-
-          merge_group[i] <- merge_group[i - 1L] + 1L
-        }
-      }
-    }
-
-    bfi_events$merge_group <- merge_group
-
-    # Preserve original BFI95 fragment IDs in candidates and map each
-    # candidate to its final merged event.
-    merge_map <- bfi_events[
-      ,
-      c(
-        "bfi_event_id",
-        "merge_group"
-      ),
-      drop = FALSE
-    ]
-
-    candidates$merge_group <- merge_map$merge_group[
+    candidates$fragment_group <- fragments$fragment_group[
       match(
         candidates$bfi_event_id,
-        merge_map$bfi_event_id
+        fragments$bfi_event_id
       )
     ]
 
     stopifnot(
-      all(is.finite(candidates$merge_group))
+      all(is.finite(candidates$fragment_group))
     )
 
-    # ------------------------------------------------------------------------
-    # Collapse provisional BFI95 fragments into final merged windows.
-    # ------------------------------------------------------------------------
-
-    groups <- split(
-      seq_len(nrow(bfi_events)),
-      bfi_events$merge_group
-    )
-
-    merged_bfi_events <- lapply(
-      groups,
+    initial_events <- lapply(
+      split(
+        seq_len(nrow(fragments)),
+        fragments$fragment_group
+      ),
       function(ii) {
-
-        z <- bfi_events[
-          ii,
-          ,
-          drop = FALSE
-        ]
+        z <- fragments[ii, , drop = FALSE]
 
         data.frame(
           ID = ID,
           block_id = z$block_id[1],
-          merge_group = z$merge_group[1],
-          bfi_start = min(z$bfi_start),
-          bfi_end = max(z$bfi_end),
+          fragment_group = z$fragment_group[1],
+          start = min(z$start),
+          end = max(z$end),
           q99 = z$q99[1],
           n_bfi_fragments = nrow(z),
           stringsAsFactors = FALSE
@@ -673,12 +607,386 @@ process_basin <- function(ID) {
       }
     )
 
-    bfi_events <- do.call(
+    initial_events <- do.call(
       rbind,
-      merged_bfi_events
+      initial_events
     )
 
-    row.names(bfi_events) <- NULL
+    rownames(initial_events) <- NULL
+  }
+
+
+  # --------------------------------------------------------------------------
+  # Merge adjacent high-flow events
+  #
+  # Adjacent events are merged when either:
+  #
+  # 1. high-flow continuity:
+  #    Qobs remains above Q99 throughout the inter-event interval;
+  #
+  # 2. short-gap continuity:
+  #    the gap is <= merge_gap_h and the inter-event minimum remains at least
+  #    merge_ratio of the smaller adjacent event peak.
+  #
+  # Merges are never allowed across finite-data blocks.
+  # --------------------------------------------------------------------------
+
+  events <- data.frame()
+
+  if (nrow(initial_events)) {
+    initial_events <- initial_events[
+      order(
+        initial_events$block_id,
+        initial_events$start
+      ),
+      ,
+      drop = FALSE
+    ]
+
+    rownames(initial_events) <- NULL
+
+    event_peak <- vapply(
+      seq_len(nrow(initial_events)),
+      function(i) {
+        raw_peak(
+          initial_events$start[i],
+          initial_events$end[i],
+          time,
+          q
+        )
+      },
+      numeric(1)
+    )
+
+    event_merge <- rep(
+      FALSE,
+      max(0L, nrow(initial_events) - 1L)
+    )
+
+    if (nrow(initial_events) >= 2L) {
+      for (i in seq_len(nrow(initial_events) - 1L)) {
+        a <- initial_events[i, , drop = FALSE]
+        b <- initial_events[i + 1L, , drop = FALSE]
+
+        if (a$block_id != b$block_id) {
+          next
+        }
+
+        stopifnot(
+          a$end <= b$start,
+          isTRUE(
+            all.equal(
+              a$q99,
+              b$q99,
+              tolerance = 1e-12
+            )
+          )
+        )
+
+        idx <- which(
+          time >= a$end &
+            time <= b$start
+        )
+
+        stopifnot(
+          length(idx) > 0L,
+          all(is.finite(q[idx]))
+        )
+
+        valley_q <- min(q[idx])
+
+        smaller_peak <- min(
+          event_peak[i],
+          event_peak[i + 1L]
+        )
+
+        gap_h <- as.numeric(
+          difftime(
+            b$start,
+            a$end,
+            units = "hours"
+          )
+        )
+
+        high_flow_continuity <- (
+          valley_q > a$q99
+        )
+
+        short_gap_continuity <- (
+          gap_h <= merge_gap_h &&
+            valley_q / smaller_peak >= merge_ratio
+        )
+
+        event_merge[i] <- (
+          high_flow_continuity ||
+            short_gap_continuity
+        )
+      }
+    }
+
+    initial_events$event_group <- make_groups(
+      nrow(initial_events),
+      event_merge
+    )
+
+    candidates$event_group <- initial_events$event_group[
+      match(
+        candidates$fragment_group,
+        initial_events$fragment_group
+      )
+    ]
+
+    stopifnot(
+      all(is.finite(candidates$event_group))
+    )
+
+    events <- lapply(
+      split(
+        seq_len(nrow(initial_events)),
+        initial_events$event_group
+      ),
+      function(ii) {
+        z <- initial_events[ii, , drop = FALSE]
+
+        data.frame(
+          ID = ID,
+          block_id = z$block_id[1],
+          event_group = z$event_group[1],
+          start = min(z$start),
+          end = max(z$end),
+          q99 = z$q99[1],
+          n_bfi_fragments = sum(z$n_bfi_fragments),
+          stringsAsFactors = FALSE
+        )
+      }
+    )
+
+    events <- do.call(
+      rbind,
+      events
+    )
+
+    events <- events[
+      order(
+        events$block_id,
+        events$start
+      ),
+      ,
+      drop = FALSE
+    ]
+
+    rownames(events) <- NULL
+  }
+
+
+  # --------------------------------------------------------------------------
+  # Extend event ends to sustained Q99 recovery
+  #
+  # Event starts are unchanged.
+  #
+  # An event end may move outward to the first hour of the first period with
+  # at least recovery_h consecutive observations at or below Q99 after the
+  # final retained Q99 candidate.
+  #
+  # If another independent event follows in the same finite-data block, the
+  # extension is clipped at the minimum Qobs between the two event windows.
+  # --------------------------------------------------------------------------
+
+  if (nrow(events)) {
+    events$end_initial <- events$end
+    events$end_extension_h <- 0
+    events$end_boundary_source <- "bfi95"
+
+    for (block_id in unique(events$block_id)) {
+      ii <- which(events$block_id == block_id)
+
+      ii <- ii[
+        order(events$start[ii])
+      ]
+
+      block <- blocks[
+        blocks$block_id == block_id,
+        ,
+        drop = FALSE
+      ]
+
+      stopifnot(nrow(block) == 1L)
+
+      block_idx <- block$i1:block$i2
+      q_block <- q[block_idx]
+
+      stopifnot(
+        all(is.finite(q_block))
+      )
+
+      low <- q_block <= q99
+      r <- rle(low)
+
+      run_end <- cumsum(r$lengths)
+      run_start <- run_end - r$lengths + 1L
+
+      keep <- which(
+        r$values &
+          r$lengths >= recovery_h
+      )
+
+      recovery_start <- if (length(keep)) {
+        block$i1 + run_start[keep] - 1L
+      } else {
+        integer(0)
+      }
+
+      for (jj in seq_along(ii)) {
+        i <- ii[jj]
+
+        end_initial_idx <- match(
+          as.numeric(events$end_initial[i]),
+          as.numeric(time)
+        )
+
+        stopifnot(
+          !is.na(end_initial_idx)
+        )
+
+        cand <- candidates[
+          candidates$event_group == events$event_group[i],
+          ,
+          drop = FALSE
+        ]
+
+        stopifnot(
+          nrow(cand) >= 1L
+        )
+
+        last_candidate_idx <- match(
+          as.numeric(max(cand$candidate_time)),
+          as.numeric(time)
+        )
+
+        stopifnot(
+          !is.na(last_candidate_idx)
+        )
+
+        after <- recovery_start[
+          recovery_start > last_candidate_idx
+        ]
+
+        proposed_end_idx <- if (length(after)) {
+          min(after)
+        } else {
+          end_initial_idx
+        }
+
+        # The recovery adjustment never shortens the initial event window.
+        final_end_idx <- max(
+          end_initial_idx,
+          proposed_end_idx
+        )
+
+        clipped <- FALSE
+
+        if (jj < length(ii)) {
+          next_i <- ii[jj + 1L]
+
+          next_start_idx <- match(
+            as.numeric(events$start[next_i]),
+            as.numeric(time)
+          )
+
+          stopifnot(
+            !is.na(next_start_idx),
+            end_initial_idx <= next_start_idx
+          )
+
+          separator_idx <- end_initial_idx:next_start_idx
+          separator_idx <- separator_idx[
+            which.min(q[separator_idx])
+          ]
+
+          if (final_end_idx > separator_idx) {
+            final_end_idx <- separator_idx
+            clipped <- TRUE
+          }
+        }
+
+        events$end[i] <- time[final_end_idx]
+
+        events$end_extension_h[i] <- as.numeric(
+          difftime(
+            events$end[i],
+            events$end_initial[i],
+            units = "hours"
+          )
+        )
+
+        if (events$end_extension_h[i] > 0) {
+          events$end_boundary_source[i] <- if (clipped) {
+            "inter_event_min"
+          } else {
+            "q99_recovery_12h"
+          }
+        }
+      }
+    }
+
+    stopifnot(
+      all(events$end >= events$end_initial)
+    )
+
+    # Adjacent events may share one hourly boundary. Assign the shared
+    # observation to the later event to keep event windows disjoint.
+    # end_boundary_source retains the hydrological boundary source before
+    # this discrete one-hour adjustment.
+    if (nrow(events) >= 2L) {
+      for (block_id in unique(events$block_id)) {
+        ii <- which(events$block_id == block_id)
+        ii <- ii[order(events$start[ii])]
+
+        if (length(ii) < 2L) {
+          next
+        }
+
+        for (j in seq_len(length(ii) - 1L)) {
+          left <- ii[j]
+          right <- ii[j + 1L]
+
+          if (events$end[left] == events$start[right]) {
+            events$end[left] <- events$end[left] - 3600
+          }
+        }
+      }
+
+      # Recompute the outward recovery extension after boundary adjustment.
+      events$end_extension_h <- pmax(
+        0,
+        as.numeric(
+          difftime(
+            events$end,
+            events$end_initial,
+            units = "hours"
+          )
+        )
+      )
+
+      same_block <- (
+        events$block_id[-1L] ==
+          events$block_id[-nrow(events)]
+      )
+
+      gap_h <- as.numeric(
+        difftime(
+          events$start[-1L],
+          events$end[-nrow(events)],
+          units = "hours"
+        )
+      )
+
+      stopifnot(
+        all(events$end >= events$start),
+        all(!same_block | gap_h >= 1)
+      )
+    }
+
   }
 
 
@@ -688,14 +996,17 @@ process_basin <- function(ID) {
 
   catalogue <- list()
 
-  if (nrow(bfi_events)) {
-    catalogue <- vector("list", nrow(bfi_events))
+  if (nrow(events)) {
+    catalogue <- vector(
+      "list",
+      nrow(events)
+    )
 
-    for (i in seq_len(nrow(bfi_events))) {
-      ev <- bfi_events[i, , drop = FALSE]
+    for (i in seq_len(nrow(events))) {
+      ev <- events[i, , drop = FALSE]
 
       cand <- candidates[
-        candidates$merge_group == ev$merge_group,
+        candidates$event_group == ev$event_group,
         ,
         drop = FALSE
       ]
@@ -707,12 +1018,12 @@ process_basin <- function(ID) {
       ]
 
       idx <- which(
-        time >= ev$bfi_start &
-          time <= ev$bfi_end
+        time >= ev$start &
+          time <= ev$end
       )
 
       stopifnot(
-        length(idx) > 0,
+        length(idx) > 0L,
         all(is.finite(q[idx]))
       )
 
@@ -722,7 +1033,11 @@ process_basin <- function(ID) {
       peak_time_obs <- time[k]
 
       duration_h <- as.numeric(
-        difftime(ev$bfi_end, ev$bfi_start, units = "hours")
+        difftime(
+          ev$end,
+          ev$start,
+          units = "hours"
+        )
       )
 
       # Qobs is in mm/h and dt = 1 h.
@@ -734,11 +1049,15 @@ process_basin <- function(ID) {
         ID = ID,
         event_id = paste0(
           ID, "_",
-          format(ev$bfi_start, "%Y%m%dT%H%M", tz = "UTC")
+          format(
+            ev$start,
+            "%Y%m%dT%H%M",
+            tz = "UTC"
+          )
         ),
         block_id = ev$block_id,
-        start_time = ev$bfi_start,
-        end_time = ev$bfi_end,
+        start_time = ev$start,
+        end_time = ev$end,
         duration_h = duration_h,
         peak_time_obs = peak_time_obs,
         peak_q_obs = peak_q_obs,
@@ -747,13 +1066,14 @@ process_basin <- function(ID) {
         peak_over_q99 = peak_q_obs / ev$q99,
         n_q99_candidates = n_candidates,
         n_bfi_fragments = ev$n_bfi_fragments,
-        merge_ratio_threshold = merge_ratio_threshold,
         first_candidate_time = min(cand$candidate_time),
         last_candidate_time = max(cand$candidate_time),
+        end_extension_h = ev$end_extension_h,
+        end_boundary_source = ev$end_boundary_source,
         valid_hours_in_event = length(idx),
         missing_hours_in_event = sum(!is.finite(q[idx])),
         is_censored = FALSE,
-        quality_flag = if (n_candidates == 1) {
+        quality_flag = if (n_candidates == 1L) {
           "ok"
         } else {
           "multiple_q99_peaks"
@@ -763,6 +1083,9 @@ process_basin <- function(ID) {
         eventmax_delta_y = delta_y,
         eventmax_delta_x = delta_x,
         q_threshold_probability = Qprob,
+        merge_ratio_threshold = merge_ratio,
+        merge_gap_h = merge_gap_h,
+        q99_recovery_hours = recovery_h,
         method_version = method
       )
     }
@@ -782,6 +1105,12 @@ process_basin <- function(ID) {
     ]
   }
 
+  # Internal grouping columns are not part of the diagnostic output.
+  if (nrow(candidates)) {
+    candidates$fragment_group <- NULL
+    candidates$event_group <- NULL
+  }
+
   rownames(candidates) <- NULL
   rownames(excluded) <- NULL
   rownames(catalogue) <- NULL
@@ -793,13 +1122,18 @@ process_basin <- function(ID) {
     matched_candidates = nrow(candidates),
     excluded_candidates = nrow(excluded),
     observed_flood_events = nrow(catalogue),
-    merged_flood_events = if (nrow(catalogue)) {
-      sum(catalogue$n_bfi_fragments > 1)
+    multi_fragment_events = if (nrow(catalogue)) {
+      sum(catalogue$n_bfi_fragments > 1L)
+    } else {
+      0L
+    },
+    q99_end_extended_events = if (nrow(catalogue)) {
+      sum(catalogue$end_extension_h > 0)
     } else {
       0L
     },
     multiple_q99_peak_events = if (nrow(catalogue)) {
-      sum(catalogue$n_q99_candidates > 1)
+      sum(catalogue$n_q99_candidates > 1L)
     } else {
       0L
     }
@@ -819,7 +1153,10 @@ process_basin <- function(ID) {
 # ==============================================================================
 
 if (ncores == 1L) {
-  results <- lapply(basins, process_basin)
+  results <- lapply(
+    basins,
+    process_basin
+  )
 } else {
   results <- parallel::mclapply(
     basins,
@@ -842,17 +1179,36 @@ if (any(failed)) {
   )
 }
 
-candidates <- bind_result(results, "candidates")
-excluded <- bind_result(results, "excluded")
-catalogue <- bind_result(results, "catalogue")
-summary_basin <- bind_result(results, "summary")
+candidates <- bind_result(
+  results,
+  "candidates"
+)
+
+excluded <- bind_result(
+  results,
+  "excluded"
+)
+
+catalogue <- bind_result(
+  results,
+  "catalogue"
+)
+
+summary_basin <- bind_result(
+  results,
+  "summary"
+)
 
 if (nrow(catalogue)) {
   catalogue <- catalogue[
-    order(catalogue$ID, catalogue$start_time),
+    order(
+      catalogue$ID,
+      catalogue$start_time
+    ),
     ,
     drop = FALSE
   ]
+
   rownames(catalogue) <- NULL
 }
 
@@ -861,7 +1217,10 @@ if (nrow(catalogue)) {
 # 5. Diagnostics
 # ==============================================================================
 
-n_candidates <- sum(summary_basin$q99_candidates)
+n_candidates <- sum(
+  summary_basin$q99_candidates
+)
+
 n_matched <- nrow(candidates)
 n_excluded <- nrow(excluded)
 n_events <- nrow(catalogue)
@@ -872,19 +1231,50 @@ cat("Q99 eventMaxima candidates :", n_candidates, "\n")
 cat("Matched to BFI95           :", n_matched, "\n")
 cat("Excluded candidates        :", n_excluded, "\n")
 cat("Observed flood events       :", n_events, "\n")
+
 cat(
-  "Merged flood events         :",
-  sum(catalogue$n_bfi_fragments > 1),
+  "Events with >1 BFI95 fragment :",
+  sum(catalogue$n_bfi_fragments > 1L),
   "\n"
 )
 
-cat("\n===== Q99 PEAKS PER OBSERVED FLOOD EVENT =====\n\n")
-print(table(catalogue$n_q99_candidates))
+cat(
+  "Q99 end-extended events     :",
+  sum(catalogue$end_extension_h > 0),
+  "\n"
+)
 
-cat("\n===== BFI95 FRAGMENTS PER OBSERVED FLOOD EVENT =====\n\n")
-print(table(catalogue$n_bfi_fragments))
 
-cat("\n===== OBSERVED FLOOD EVENT DURATIONS [h] =====\n\n")
+cat("\n===== Q99 PEAKS PER EVENT =====\n\n")
+
+print(
+  table(
+    catalogue$n_q99_candidates
+  )
+)
+
+
+cat("\n===== BFI95 FRAGMENTS PER EVENT =====\n\n")
+
+print(
+  table(
+    catalogue$n_bfi_fragments
+  )
+)
+
+
+cat("\n===== END EXTENSION [h] =====\n\n")
+
+print(
+  quantile(
+    catalogue$end_extension_h,
+    c(0, .50, .90, .95, .99, 1)
+  )
+)
+
+
+cat("\n===== EVENT DURATION [h] =====\n\n")
+
 print(
   quantile(
     catalogue$duration_h,
@@ -892,7 +1282,9 @@ print(
   )
 )
 
+
 cat("\n===== PEAK / Q99 =====\n\n")
+
 print(
   quantile(
     catalogue$peak_over_q99,
@@ -900,12 +1292,24 @@ print(
   )
 )
 
+
 cat("\n===== PER-BASIN SUMMARY =====\n\n")
-print(summary_basin, row.names = FALSE, digits = 5)
+
+print(
+  summary_basin,
+  row.names = FALSE,
+  digits = 5
+)
+
 
 if (nrow(excluded)) {
   cat("\n===== EXCLUSION REASONS =====\n\n")
-  print(table(excluded$exclude_reason))
+
+  print(
+    table(
+      excluded$exclude_reason
+    )
+  )
 }
 
 
@@ -921,54 +1325,80 @@ to_csv <- function(x, time_cols) {
   x
 }
 
+
 catalogue_out <- to_csv(
   catalogue,
   c(
-    "start_time", "end_time", "peak_time_obs",
-    "first_candidate_time", "last_candidate_time"
+    "start_time",
+    "end_time",
+    "peak_time_obs",
+    "first_candidate_time",
+    "last_candidate_time"
   )
 )
+
 
 candidates_out <- to_csv(
   candidates,
   c(
     "candidate_time",
-    "eventmax_start", "eventmax_end",
-    "bfi_start", "bfi_end"
+    "eventmax_start",
+    "eventmax_end",
+    "bfi_start",
+    "bfi_end"
   )
 )
+
 
 excluded_out <- to_csv(
   excluded,
   c(
     "candidate_time",
-    "eventmax_start", "eventmax_end"
+    "eventmax_start",
+    "eventmax_end"
   )
 )
 
+
 write.csv(
   catalogue_out,
-  file.path(dirOut, "observed_flood_catalogue.csv"),
+  file.path(
+    dirOut,
+    "observed_flood_catalogue.csv"
+  ),
   row.names = FALSE
 )
+
 
 write.csv(
   candidates_out,
-  file.path(dirDiag, "observed_flood_candidates.csv"),
+  file.path(
+    dirDiag,
+    "observed_flood_candidates.csv"
+  ),
   row.names = FALSE
 )
+
 
 write.csv(
   excluded_out,
-  file.path(dirDiag, "observed_flood_excluded.csv"),
+  file.path(
+    dirDiag,
+    "observed_flood_excluded.csv"
+  ),
   row.names = FALSE
 )
 
+
 write.csv(
   summary_basin,
-  file.path(dirDiag, "observed_flood_summary.csv"),
+  file.path(
+    dirDiag,
+    "observed_flood_summary.csv"
+  ),
   row.names = FALSE
 )
+
 
 cat("\nFiles written to:", dirOut, "\n")
 cat("\nOBSERVED FLOOD CATALOGUE BUILD: OK\n")

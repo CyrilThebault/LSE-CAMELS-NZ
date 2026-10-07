@@ -223,6 +223,14 @@ events_per_year <- nrow(ev) / record_years
 n_multi <- sum(ev$n_q99_candidates > 1)
 multi_pct <- 100 * n_multi / nrow(ev)
 
+n_multi_fragment <- sum(ev$n_bfi_fragments > 1)
+multi_fragment_pct <- 100 * n_multi_fragment / nrow(ev)
+
+n_end_extended <- sum(ev$end_extension_h > 0)
+end_extended_pct <- 100 * n_end_extended / nrow(ev)
+
+method_version <- paste(unique(ev$method_version), collapse = ", ")
+
 duration_stats  <- summary_stats(ev$duration_h)
 peakratio_stats <- summary_stats(ev$peak_over_q99)
 volume_stats    <- summary_stats(ev$volume_obs_mm)
@@ -305,7 +313,12 @@ summary_sections <- list(
     content = paste0(
       "Events: ", nrow(ev),
       "\nEvents/year: ", round(events_per_year, 2),
-      "\nQ99: ", format(ev$q99[1], digits = 5), " mm/h"
+      "\nEvents >1 BFI95 fragment: ", n_multi_fragment,
+      " (", round(multi_fragment_pct, 1), "%)",
+      "\nQ99 end extended: ", n_end_extended,
+      " (", round(end_extended_pct, 1), "%)",
+      "\nQ99: ", format(ev$q99[1], digits = 5), " mm/h",
+      "\nMethod: ", method_version
     )
   ),
   list(title = "Event duration", content = fmt_stats(duration_stats, 1, " h")),
@@ -454,6 +467,22 @@ make_event_plot <- function(e) {
     " h | peak/Q99=", round(e$peak_over_q99, 2),
     " | Q99=", format(e$q99, digits = 4), " mm/h",
     " | candidates=", e$n_q99_candidates,
+    if (e$n_bfi_fragments > 1) {
+      paste0(" | BFI95 fragments=", e$n_bfi_fragments)
+    } else {
+      ""
+    },
+    if (e$end_extension_h > 0) {
+      paste0(
+        " | end extension=",
+        round(e$end_extension_h),
+        " h [",
+        e$end_boundary_source,
+        "]"
+      )
+    } else {
+      ""
+    },
     " | ", e$quality_flag
   )
 

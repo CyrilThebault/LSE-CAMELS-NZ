@@ -587,8 +587,27 @@ config/basins.txt
 The detection procedure uses smoothed observed discharge to estimate baseflow
 and quickflow, identifies candidate quickflow events with `hydroEvents`, retains
 candidates whose aligned raw observed discharge exceeds the basin-specific Q99
-threshold, and defines the final event boundaries using a baseflow-index
+threshold, and associates them with event boundaries defined by a baseflow-index
 threshold of 0.95.
+
+Retained BFI95 fragments are first consolidated when raw observed discharge
+remains above Q99 between them and the inter-fragment minimum remains at least
+90% of the smaller adjacent peak. Adjacent high-flow events are then merged when
+either raw discharge remains above Q99 throughout the intervening period, or the
+gap is at most 12 hours and the intervening minimum remains at least 90% of the
+smaller adjacent peak.
+
+Event starts are left unchanged. Event ends may extend to the start of the first
+period of at least 12 consecutive hourly observations at or below Q99 after the
+final retained Q99 candidate. When another independent event follows in the same
+continuous-data block, this extension is clipped at the minimum observed
+discharge between the two event windows. If two final events share one hourly
+boundary, the shared observation is assigned to the later event by shortening
+the preceding event by one hour.
+
+Missing observed discharge divides each record into continuous finite-data
+blocks; events are never joined across missing-data gaps and no interpolation is
+used for flood detection.
 
 The resulting catalogue is written to:
 
@@ -651,8 +670,9 @@ shapefiles/
 Each catchment PDF contains a summary page with station and record information,
 catchment maps, catalogue statistics, and event-distribution diagnostics,
 followed by hydrographs for all detected flood events. Event hydrographs show
-the raw observed discharge, event window, Q99 threshold, observed peak, and
-candidate Q99 peaks.
+the raw observed discharge, final event window, Q99 threshold, observed peak,
+and candidate Q99 peaks. Where applicable, they also report the number of BFI95
+fragments and the duration and source of any Q99-based end extension.
 
 Review PDFs are written to:
 
