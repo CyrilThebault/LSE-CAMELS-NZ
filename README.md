@@ -651,80 +651,185 @@ export DIR_MAIN="$PWD"
 sbatch scripts/05_analysis/floods/01_build_observed_flood_catalogue_hpc_fir.slurm
 ```
 
-## 9. Review the observed flood-event catalogue
+## 9. Visualise and quality-control the observed flood-event catalogue
 
-The observed flood catalogue can be reviewed visually using one diagnostic PDF
-per catchment. This step does not modify or re-detect flood events: it only
-visualises the canonical catalogue produced in Step 8.
+The observed flood catalogue produced in Step 8 is canonical and shared by
+hourly and daily flood-performance evaluation. Events are detected **only**
+from hourly observed discharge (`Qobs`); no daily redetection is performed.
 
-The review combines the flood catalogue and diagnostics with the hourly observed
-discharge and spatial information from:
+The workflow consists of event visualisation, automated QC screening, manual
+review, and finalisation. QC does not change event boundaries, merge events,
+or automatically exclude flagged events.
 
-```text
-shapefiles/
-├── camel_stationsNZ.*
-├── nz.*
-└── All_Nested_Catchments.*
-```
+### 9.1. Plot observed flood events
 
-Each catchment PDF contains a summary page with station and record information,
-catchment maps, catalogue statistics, and event-distribution diagnostics,
-followed by hydrographs for all detected flood events. Event hydrographs show
-the raw observed discharge, final event window, Q99 threshold, observed peak,
-and candidate Q99 peaks. Where applicable, they also report the number of BFI95
-fragments and the duration and source of any Q99-based end extension.
-
-Review PDFs are written to:
+The generic visualiser is:
 
 ```text
-data/flood/review/<ID>_observed_flood_review.pdf
+scripts/05_analysis/floods/02_plot_observed_flood_catalogue.R
 ```
 
-Review generation is parallelised by catchment. `NCORES` controls the number of
-basins processed concurrently.
+Its command-line interface is:
 
-### On a local machine
+```bash
+Rscript scripts/05_analysis/floods/02_plot_observed_flood_catalogue.R \
+  <dirMain> <events.csv> <ID> <output.pdf>
+```
+
+It combines hourly observed discharge, flood-detection diagnostics, and
+geographical information to produce a catchment summary and event hydrographs.
+The same visualiser supports the full canonical catalogue or QC review events:
+
+```text
+data/flood/observed_flood_catalogue.csv
+data/flood/qc/observed_flood_qc_review.csv
+```
+
+The local, ARC, and Fir launchers select the default output directory and PDF
+filename from the input CSV:
+
+```text
+data/flood/pdf/<ID>_observed_flood_review.pdf
+data/flood/qc/pdf/<ID>_observed_flood_qc_review.pdf
+```
+
+`OUT_DIR` can override the output directory. By default, `EVENTS_FILE` is the
+canonical catalogue; selecting `observed_flood_qc_review.csv` activates QC
+annotations and displays only the events requiring review.
+
+#### Local
+
+Plot the complete canonical catalogue:
+
+```bash
+DIR_MAIN="$PWD" NCORES=4 \
+  bash scripts/05_analysis/floods/02_plot_observed_flood_catalogue_local.sh
+```
+
+Plot one basin:
+
+```bash
+DIR_MAIN="$PWD" BASIN_IDS=9140 NCORES=1 \
+  bash scripts/05_analysis/floods/02_plot_observed_flood_catalogue_local.sh
+```
+
+Plot QC review events for one basin:
+
+```bash
+DIR_MAIN="$PWD" BASIN_IDS=9140 NCORES=1 \
+EVENTS_FILE="$PWD/data/flood/qc/observed_flood_qc_review.csv" \
+  bash scripts/05_analysis/floods/02_plot_observed_flood_catalogue_local.sh
+```
+
+To generate all QC PDFs, select only basins listed in the QC review CSV:
+
+```bash
+QC_IDS=$(Rscript -e 'x <- read.csv("data/flood/qc/observed_flood_qc_review.csv"); cat(sort(unique(as.integer(x$ID))), collapse=" ")')
+
+DIR_MAIN="$PWD" NCORES=4 BASIN_IDS="$QC_IDS" \
+EVENTS_FILE="$PWD/data/flood/qc/observed_flood_qc_review.csv" \
+  bash scripts/05_analysis/floods/02_plot_observed_flood_catalogue_local.sh
+```
+
+#### ARC HPC
 
 ```bash
 export DIR_MAIN="$PWD"
-export NCORES=4
-
-bash scripts/05_analysis/floods/02_review_observed_flood_catalogue_local.sh
-```
-
-A subset of basins can be reviewed with `BASIN_IDS`, for example:
-
-```bash
-export DIR_MAIN="$PWD"
-export BASIN_IDS=802
-export NCORES=1
-
-bash scripts/05_analysis/floods/02_review_observed_flood_catalogue_local.sh
-```
-
-### On ARC HPC
-
-```bash
-export DIR_MAIN="$PWD"
-
-sbatch scripts/05_analysis/floods/02_review_observed_flood_catalogue_hpc_arc.slurm
+sbatch scripts/05_analysis/floods/02_plot_observed_flood_catalogue_hpc_arc.slurm
 ```
 
 For a single-basin test:
 
 ```bash
-sbatch \
-  --export=ALL,DIR_MAIN="$PWD",BASIN_IDS=802,NCORES=1 \
-  scripts/05_analysis/floods/02_review_observed_flood_catalogue_hpc_arc.slurm
+sbatch --export=ALL,DIR_MAIN="$PWD",BASIN_IDS=9140,NCORES=1 \
+  scripts/05_analysis/floods/02_plot_observed_flood_catalogue_hpc_arc.slurm
 ```
 
-### On FIR HPC
+#### Fir HPC
 
 ```bash
 export DIR_MAIN="$PWD"
-
-sbatch scripts/05_analysis/floods/02_review_observed_flood_catalogue_hpc_fir.slurm
+sbatch scripts/05_analysis/floods/02_plot_observed_flood_catalogue_hpc_fir.slurm
 ```
+
+All three launchers support `DIR_MAIN`, `NCORES`, `BASIN_IDS`, `EVENTS_FILE`,
+and `OUT_DIR`. HPC execution should be validated on the respective cluster.
+
+### 9.2. Automated observed flood QC
+
+Run the screening script from the repository root:
+
+```bash
+NCORES=8 Rscript scripts/05_analysis/floods/03_screen_observed_flood_qc.R .
+```
+
+It reads `data/flood/observed_flood_catalogue.csv` and writes:
+
+```text
+data/flood/qc/observed_flood_qc.csv
+data/flood/qc/observed_flood_qc_review.csv
+```
+
+The first table includes all canonical events, their screening flags, and
+associated diagnostic metrics. The second contains the subset requiring
+manual review. Flags identify potential issues only; they do not cause
+automatic exclusion. Neither detection nor event segmentation is rerun.
+
+The `QC_OUT_DIR` environment variable can override the QC output directory.
+
+### 9.3. Manual QC decisions
+
+Human review decisions are stored in:
+
+```text
+data/flood/qc/observed_flood_qc_decisions.csv
+```
+
+The file contains four columns:
+
+| Column | Purpose |
+| --- | --- |
+| `event_id` | Exact canonical event identifier; do not edit existing IDs |
+| `decision` | `keep` or `exclude` |
+| `reason` | Required when `decision=exclude` |
+| `comment` | Optional explanatory note |
+
+Every event requiring QC review must have a decision. Events not flagged are
+accepted by default (`auto_pass`), but a non-flagged event can be manually
+excluded by adding its exact `event_id` with `decision=exclude` and a reason.
+Manual review never changes event boundaries or merges events.
+
+The `data/` directory is ignored by Git, so the completed decision CSV must be
+backed up independently and distributed with the final research results
+(e.g., the Zenodo archive associated with the paper).
+
+### 9.4. Finalise the reviewed catalogue
+
+```bash
+Rscript scripts/05_analysis/floods/04_finalize_observed_flood_qc.R .
+```
+
+This script requires decisions for all events flagged for review. If any are
+pending, it does not produce a final reviewed catalogue. Otherwise it writes:
+
+```text
+data/flood/qc/observed_flood_catalogue_reviewed.csv
+```
+
+The output retains the canonical event IDs and boundaries and adds QC review
+results, including `qc_status` and `analysis_eligible`.
+
+| `qc_status` | Meaning | `analysis_eligible` |
+| --- | --- | --- |
+| `auto_pass` | Not flagged for manual review | `TRUE` |
+| `review_keep` | Flagged and manually retained | `TRUE` |
+| `review_exclude` | Flagged and manually excluded | `FALSE` |
+| `manual_exclude` | Not flagged but manually excluded | `FALSE` |
+| `review_pending` | Awaiting required decision; finalisation fails | Not finalised |
+
+Downstream flood-performance analysis should use the reviewed catalogue and
+its `analysis_eligible` column. The same eligible observed events are used
+for daily and hourly evaluation.
 
 ## Important implementation notes
 
