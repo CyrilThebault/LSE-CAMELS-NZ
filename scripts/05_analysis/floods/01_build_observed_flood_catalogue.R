@@ -56,6 +56,19 @@ dir.create(dirOut, recursive = TRUE, showWarnings = FALSE)
 dir.create(dirDiag, recursive = TRUE, showWarnings = FALSE)
 
 source(file.path(dirMain, "scripts/functions/basins.R"))
+source(file.path(dirMain, "scripts/functions/common.R"))
+
+experiment <- load_workflow_config(
+  file.path(dirMain, "config", "experiment_hourly.R")
+)
+
+stopifnot(
+  identical(experiment$timestep, "hourly"),
+  is.character(experiment$timezone),
+  length(experiment$timezone) == 1L,
+  !is.na(experiment$timezone),
+  nzchar(experiment$timezone)
+)
 
 basin_file <- file.path(dirMain, "config", "basins.txt")
 
@@ -103,33 +116,6 @@ cat("Method  :", method, "\n\n")
 # 2. Helpers
 # ==============================================================================
 
-decode_time <- function(x, units) {
-  z <- regmatches(
-    units,
-    regexec(
-      "^\\s*(seconds|minutes|hours|days)\\s+since\\s+(.+?)\\s*$",
-      units,
-      ignore.case = TRUE
-    )
-  )[[1]]
-
-  stopifnot(length(z) == 3L)
-
-  origin <- sub(
-    "\\s+(UTC|GMT)$", "", trimws(z[3]),
-    ignore.case = TRUE
-  )
-
-  mult <- switch(
-    tolower(z[2]),
-    seconds = 1,
-    minutes = 60,
-    hours = 3600,
-    days = 86400
-  )
-
-  as.POSIXct(origin, tz = "UTC") + x * mult
-}
 
 
 get_blocks <- function(ok) {
@@ -163,9 +149,10 @@ read_basin <- function(ID) {
 
   q <- as.numeric(ncvar_get(nc, "q_obs"))
 
-  time <- decode_time(
+  time <- nc_time_to_posixct(
     nc$dim$time$vals,
-    nc$dim$time$units
+    nc$dim$time$units,
+    experiment
   )
 
   list(
@@ -179,7 +166,7 @@ read_basin <- function(ID) {
 
 
 fmt_time <- function(x) {
-  format(x, "%Y-%m-%d %H:%M:%S", tz = "UTC")
+  format(x, "%Y-%m-%d %H:%M:%S", tz = experiment$timezone)
 }
 
 
@@ -1052,7 +1039,7 @@ process_basin <- function(ID) {
           format(
             ev$start,
             "%Y%m%dT%H%M",
-            tz = "UTC"
+            tz = experiment$timezone
           )
         ),
         block_id = ev$block_id,

@@ -27,48 +27,32 @@ fileEvents <- normalizePath(args[2], mustWork = TRUE)
 ID <- as.character(args[3])
 fileOut <- args[4]
 
+source(file.path(dirMain, "scripts", "functions", "common.R"))
+
+experiment <- load_workflow_config(
+  file.path(dirMain, "config", "experiment_hourly.R")
+)
+
+stopifnot(
+  identical(experiment$timestep, "hourly"),
+  is.character(experiment$timezone),
+  length(experiment$timezone) == 1L,
+  !is.na(experiment$timezone),
+  nzchar(experiment$timezone)
+)
+
 
 # ==============================================================================
 # Helpers
 # ==============================================================================
 
-decode_time <- function(x, units) {
-
-  z <- regmatches(
-    units,
-    regexec(
-      "^\\s*(seconds|minutes|hours|days)\\s+since\\s+(.+?)\\s*$",
-      units,
-      ignore.case = TRUE
-    )
-  )[[1]]
-
-  stopifnot(length(z) == 3L)
-
-  origin <- sub(
-    "\\s+(UTC|GMT)$",
-    "",
-    trimws(z[3]),
-    ignore.case = TRUE
-  )
-
-  mult <- switch(
-    tolower(z[2]),
-    seconds = 1,
-    minutes = 60,
-    hours = 3600,
-    days = 86400
-  )
-
-  as.POSIXct(origin, tz = "UTC") + x * mult
-}
 
 
 parse_time <- function(x) {
   as.POSIXct(
     x,
     format = "%Y-%m-%d %H:%M:%S",
-    tz = "UTC"
+    tz = experiment$timezone
   )
 }
 
@@ -253,16 +237,7 @@ fmt_stats <- function(x, digits, unit = "") {
 }
 
 
-flag_true <- function(e, name) {
 
-  name %in% names(e) &&
-    !is.na(e[[name]][1]) &&
-    isTRUE(
-      as.logical(
-        e[[name]][1]
-      )
-    )
-}
 
 
 text_value <- function(e, name) {
@@ -333,13 +308,7 @@ fileCatalogue <- file.path(
   "observed_flood_catalogue.csv"
 )
 
-fileCandidates <- file.path(
-  dirMain,
-  "data",
-  "flood",
-  "diagnostics",
-  "observed_flood_candidates.csv"
-)
+
 
 fileExcluded <- file.path(
   dirMain,
@@ -382,7 +351,6 @@ fileCatchments <- file.path(
 filesRequired <- c(
   fileEvents,
   fileCatalogue,
-  fileCandidates,
   fileExcluded,
   fileNC,
   fileStations,
@@ -421,10 +389,7 @@ catalogue <- read.csv(
   stringsAsFactors = FALSE
 )
 
-candidates <- read.csv(
-  fileCandidates,
-  stringsAsFactors = FALSE
-)
+
 
 excluded <- read.csv(
   fileExcluded,
@@ -464,9 +429,7 @@ catalogue$ID <- as.character(
   catalogue$ID
 )
 
-candidates$ID <- as.character(
-  candidates$ID
-)
+
 
 excluded$ID <- as.character(
   excluded$ID
@@ -490,16 +453,7 @@ catalogue <- parse_cols(
   timeColumns
 )
 
-candidates <- parse_cols(
-  candidates,
-  c(
-    "candidate_time",
-    "eventmax_start",
-    "eventmax_end",
-    "bfi_start",
-    "bfi_end"
-  )
-)
+
 
 excluded <- parse_cols(
   excluded,
@@ -522,11 +476,7 @@ canonical <- catalogue[
   drop = FALSE
 ]
 
-cand <- candidates[
-  candidates$ID == ID,
-  ,
-  drop = FALSE
-]
+
 
 exc <- excluded[
   excluded$ID == ID,
@@ -631,9 +581,10 @@ q <- as.numeric(
   )
 )
 
-time <- decode_time(
+time <- nc_time_to_posixct(
   nc$dim$time$vals,
-  nc$dim$time$units
+  nc$dim$time$units,
+  experiment
 )
 
 nc_close(
@@ -881,9 +832,9 @@ reasonText <- if (nrow(exc)) {
 
 qcReasonText <- ""
 
-if ("quick_review_reasons" %in% names(ev)) {
+if ("review_reasons" %in% names(ev)) {
 
-  z <- ev$quick_review_reasons
+  z <- ev$review_reasons
 
   z <- z[
     !is.na(z) &
@@ -944,6 +895,7 @@ hasQC <- any(
   c(
     "quick_review",
     "quick_review_reasons",
+    "review_reasons",
     "flag_noisy",
     "flag_linear_qobs",
     "qc_status"
@@ -1510,25 +1462,7 @@ make_event_plot <- function(e) {
     drop = FALSE
   ]
 
-  d$q_smooth <- as.numeric(
-    stats::filter(
-      d$q,
-      rep(
-        1 / 5,
-        5
-      ),
-      sides = 2
-    )
-  )
 
-  cc <- cand[
-    cand$candidate_time >=
-      e$start_time &
-      cand$candidate_time <=
-        e$end_time,
-    ,
-    drop = FALSE
-  ]
 
   spanH <- as.numeric(
     difftime(
@@ -1551,383 +1485,26 @@ make_event_plot <- function(e) {
   }
 
 
-  # ---------------------------------------------------------------------------
-  # Segmentation information
-  # ---------------------------------------------------------------------------
-
-  segmentation <- c(
-    paste0(
-      "duration=",
-      round(
-        e$duration_h
-      ),
-      " h"
-    ),
-    paste0(
-      "peak/Q99=",
-      fmt(
-        e$peak_over_q99,
-        2
-      )
-    ),
-    paste0(
-      "Q99=",
-      format(
-        e$q99,
-        digits = 4
-      ),
-      " mm/h"
-    )
+  subtitle <- paste0(
+    "Duration: ", round(e$duration_h), " h",
+    " | Peak Qobs: ", fmt(e$peak_q_obs, 3), " mm/h"
   )
 
-  if (
-    "n_q99_candidates" %in% names(e) &&
-      is.finite(
-        e$n_q99_candidates
-      )
-  ) {
+  if (hasQC) {
+    reviewReasons <- text_value(e, "review_reasons")
 
-    segmentation <- c(
-      segmentation,
-      paste0(
-        "candidates=",
-        e$n_q99_candidates
-      )
-    )
-  }
-
-  if (
-    "n_bfi_fragments" %in% names(e) &&
-      is.finite(
-        e$n_bfi_fragments
-      ) &&
-      e$n_bfi_fragments > 1
-  ) {
-
-    segmentation <- c(
-      segmentation,
-      paste0(
-        "BFI95 fragments=",
-        e$n_bfi_fragments
-      )
-    )
-  }
-
-  if (
-    "end_extension_h" %in% names(e) &&
-      is.finite(
-        e$end_extension_h
-      ) &&
-      e$end_extension_h > 0
-  ) {
-
-    z <- paste0(
-      "end extension=",
-      round(
-        e$end_extension_h
-      ),
-      " h"
-    )
-
-    if (
-      "end_boundary_source" %in% names(e)
-    ) {
-
-      z <- paste0(
-        z,
-        " [",
-        e$end_boundary_source,
-        "]"
-      )
+    if (!nzchar(reviewReasons)) {
+      reviewReasons <- text_value(e, "quick_review_reasons")
     }
 
-    segmentation <- c(
-      segmentation,
-      z
-    )
-  }
-
-  qualityFlag <- text_value(
-    e,
-    "quality_flag"
-  )
-
-  if (nzchar(qualityFlag)) {
-
-    segmentation <- c(
-      segmentation,
-      qualityFlag
-    )
-  }
-
-
-  # ---------------------------------------------------------------------------
-  # QC information
-  # ---------------------------------------------------------------------------
-
-  qc <- character(0)
-
-  qcStatus <- text_value(
-    e,
-    "qc_status"
-  )
-
-  if (nzchar(qcStatus)) {
-
-    qc <- c(
-      qc,
-      paste0(
-        "status=",
-        qcStatus
-      )
-    )
-  }
-
-  reviewReasons <- text_value(
-    e,
-    "quick_review_reasons"
-  )
-
-  if (nzchar(reviewReasons)) {
-
-    qc <- c(
-      qc,
-      paste0(
-        "review=",
-        reviewReasons
-      )
-    )
-  }
-
-
-  # Noise.
-
-  if (
-    flag_true(
-      e,
-      "flag_noisy"
-    )
-  ) {
-
-    noiseText <- paste0(
-      "noise: n=",
-      if (
-        "sigrev_e010_n" %in%
-          names(e)
-      ) {
-        e$sigrev_e010_n
-      } else {
-        "NA"
-      },
-      ", median gap=",
-      if (
-        "sigrev_e010_median_gap_h" %in%
-          names(e)
-      ) {
-        fmt(
-          e$sigrev_e010_median_gap_h,
-          1
-        )
-      } else {
-        "NA"
-      },
-      " h"
-    )
-
-    if (
-      "sigrev_e010_pair_frac_le3h" %in%
-        names(e)
-    ) {
-
-      noiseText <- paste0(
-        noiseText,
-        ", pairs<=3h=",
-        fmt(
-          e$sigrev_e010_pair_frac_le3h,
-          2
-        )
+    if (nzchar(reviewReasons)) {
+      subtitle <- paste0(
+        subtitle,
+        "\nQC: ",
+        gsub(";", ", ", reviewReasons, fixed = TRUE)
       )
     }
-
-    if (
-      "sigrev_e010_max_cluster_3h" %in%
-        names(e)
-    ) {
-
-      noiseText <- paste0(
-        noiseText,
-        ", cluster3=",
-        e$sigrev_e010_max_cluster_3h
-      )
-    }
-
-    qc <- c(
-      qc,
-      noiseText
-    )
   }
-
-
-  # Timing morphology.
-
-  if (
-    flag_true(
-      e,
-      "flag_timing_very_far"
-    ) &&
-      "max_time_distance" %in%
-        names(e)
-  ) {
-
-    qc <- c(
-      qc,
-      paste0(
-        "Dtime=",
-        fmt(
-          e$max_time_distance,
-          2
-        )
-      )
-    )
-  }
-
-
-  # Peak amplitude.
-
-  if (
-    flag_true(
-      e,
-      "flag_peak_amplitude_extreme"
-    ) &&
-      "peak_amplitude_distance" %in%
-        names(e)
-  ) {
-
-    z <- paste0(
-      "Dpeak=",
-      fmt(
-        e$peak_amplitude_distance,
-        2
-      )
-    )
-
-    if (
-      "peak_over_basin_q90" %in%
-        names(e)
-    ) {
-
-      z <- paste0(
-        z,
-        ", peak/Q90=",
-        fmt(
-          e$peak_over_basin_q90,
-          2
-        )
-      )
-    }
-
-    qc <- c(
-      qc,
-      z
-    )
-  }
-
-
-  # Event boundaries.
-
-  if (
-    flag_true(
-      e,
-      "flag_start_boundary"
-    ) ||
-      flag_true(
-        e,
-        "flag_end_boundary"
-      )
-  ) {
-
-    qc <- c(
-      qc,
-      paste0(
-        "boundary: start/Q99=",
-        if (
-          "q_start_over_q99" %in%
-            names(e)
-        ) {
-          fmt(
-            e$q_start_over_q99,
-            2
-          )
-        } else {
-          "NA"
-        },
-        ", end/Q99=",
-        if (
-          "q_end_over_q99" %in%
-            names(e)
-        ) {
-          fmt(
-            e$q_end_over_q99,
-            2
-          )
-        } else {
-          "NA"
-        }
-      )
-    )
-  }
-
-
-  # Missing-data / zero-flow context.
-
-  if (
-    flag_true(
-      e,
-      "flag_near_data_gap"
-    ) ||
-      flag_true(
-        e,
-        "flag_zero_inside_event"
-      )
-  ) {
-
-    qc <- c(
-      qc,
-      paste0(
-        "data: near gap=",
-        flag_true(
-          e,
-          "flag_near_data_gap"
-        ),
-        ", zero hours=",
-        if (
-          "zero_hours_inside_event" %in%
-            names(e)
-        ) {
-          e$zero_hours_inside_event
-        } else {
-          "NA"
-        }
-      )
-    )
-  }
-
-
-  subtitle <- paste(
-    paste(
-      segmentation,
-      collapse = " | "
-    ),
-    if (length(qc)) {
-      paste(
-        qc,
-        collapse = " | "
-      )
-    } else {
-      NULL
-    },
-    sep = "\n"
-  )
 
 
   # ---------------------------------------------------------------------------
@@ -1957,20 +1534,11 @@ make_event_plot <- function(e) {
     )
 
 
-  # Raw and smoothed Qobs.
+  # Raw Qobs.
 
   p <- p +
     geom_line(
       linewidth = 0.4,
-      na.rm = TRUE
-    ) +
-    geom_line(
-      aes(
-        y = q_smooth
-      ),
-      linewidth = 0.35,
-      linetype = "dashed",
-      alpha = 0.8,
       na.rm = TRUE
     )
 
@@ -2020,29 +1588,12 @@ make_event_plot <- function(e) {
     )
 
 
-  # Candidate Q99 peaks.
 
-  if (nrow(cc)) {
-
-    p <- p +
-      geom_point(
-        data = cc,
-        aes(
-          candidate_time,
-          candidate_q_obs
-        ),
-        inherit.aes = FALSE,
-        colour = "darkorange3",
-        shape = 21,
-        fill = NA,
-        stroke = 0.8,
-        size = if (hasQC) 2.2 else 1.8
-      )
-  }
 
 
   p +
     scale_x_datetime(
+      timezone = experiment$timezone,
       date_breaks = dateBreaks,
       date_labels = "%m-%d\n%H:%M",
       expand = expansion(
@@ -2061,7 +1612,13 @@ make_event_plot <- function(e) {
       )
     ) +
     labs(
-      title = e$event_id,
+      title = paste0(
+        "Basin ", ID, ", peak: ",
+        paste0(
+          format(e$peak_time_obs, "%Y-%m-%d %H:%M", tz = experiment$timezone),
+          " NZST (UTC+12)"
+        )
+      ),
       subtitle = subtitle,
       x = NULL,
       y = "Qobs [mm/h]"

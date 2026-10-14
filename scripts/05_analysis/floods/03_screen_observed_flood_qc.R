@@ -8,6 +8,20 @@ dirMain <- if (length(args)) {
   normalizePath(".", mustWork = TRUE)
 }
 
+source(file.path(dirMain, "scripts", "functions", "common.R"))
+
+experiment <- load_workflow_config(
+  file.path(dirMain, "config", "experiment_hourly.R")
+)
+
+stopifnot(
+  identical(experiment$timestep, "hourly"),
+  is.character(experiment$timezone),
+  length(experiment$timezone) == 1L,
+  !is.na(experiment$timezone),
+  nzchar(experiment$timezone)
+)
+
 fileCatalogue <- file.path(
   dirMain, "data", "flood", "observed_flood_catalogue.csv"
 )
@@ -75,39 +89,10 @@ NOISE_MAX_MEDIAN_GAP_H <- 3
 # ==============================================================================
 
 parse_time <- function(x) {
-  as.POSIXct(x, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+  as.POSIXct(x, format = "%Y-%m-%d %H:%M:%S", tz = experiment$timezone)
 }
 
 
-decode_time <- function(x, units) {
-  z <- regmatches(
-    units,
-    regexec(
-      "^\\s*(seconds|minutes|hours|days)\\s+since\\s+(.+?)\\s*$",
-      units,
-      ignore.case = TRUE
-    )
-  )[[1]]
-
-  stopifnot(length(z) == 3L)
-
-  origin <- sub(
-    "\\s+(UTC|GMT)$",
-    "",
-    trimws(z[3]),
-    ignore.case = TRUE
-  )
-
-  mult <- switch(
-    tolower(z[2]),
-    seconds = 1,
-    minutes = 60,
-    hours = 3600,
-    days = 86400
-  )
-
-  as.POSIXct(origin, tz = "UTC") + x * mult
-}
 
 
 qtl <- function(x, p) {
@@ -450,8 +435,8 @@ scan_linear_qobs <- function(q, time, k1, k2) {
   }
 
   out$flag <- TRUE
-  out$start <- format(time[best$start], "%Y-%m-%d %H:%M:%S", tz = "UTC")
-  out$end <- format(time[best$end], "%Y-%m-%d %H:%M:%S", tz = "UTC")
+  out$start <- format(time[best$start], "%Y-%m-%d %H:%M:%S", tz = experiment$timezone)
+  out$end <- format(time[best$end], "%Y-%m-%d %H:%M:%S", tz = experiment$timezone)
   out$overlap_h <- best$overlap_h
   out$r2 <- unname(best$diag["r2"])
   out$rel_rmse <- unname(best$diag["rel_rmse"])
@@ -543,7 +528,11 @@ process_basin <- function(ID) {
 
   nc <- nc_open(fileNC)
   q <- as.numeric(ncvar_get(nc, "q_obs"))
-  time <- decode_time(nc$dim$time$vals, nc$dim$time$units)
+  time <- nc_time_to_posixct(
+    nc$dim$time$vals,
+    nc$dim$time$units,
+    experiment
+  )
   nc_close(nc)
 
   stopifnot(length(q) == length(time))
