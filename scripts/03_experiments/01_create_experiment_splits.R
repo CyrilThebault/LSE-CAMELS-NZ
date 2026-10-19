@@ -64,7 +64,18 @@ make_fold <- function(base, name, train, test, meta = list()) {
 # Create experiment directory
 # ==============================================================================
 
-base <- ensure_dir(file.path(paths$experiments, mode))
+base <- file.path(paths$experiments, mode)
+
+# Never overwrite an existing experimental split by default.
+if (dir.exists(base) &&
+    length(list.files(base, all.files = TRUE, no.. = TRUE)) > 0L) {
+  stop(
+    "Experiment splits already exist under: ", base,
+    "\nExisting partitions and experiment results are protected."
+  )
+}
+
+base <- ensure_dir(base)
 
 
 # ==============================================================================
