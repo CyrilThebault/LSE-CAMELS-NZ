@@ -31,9 +31,14 @@ library(hydroEvents)
 
 args <- commandArgs(trailingOnly = TRUE)
 
+force <- length(args) > 0L && tail(args, 1L) == "--force"
+if (force) {
+  args <- head(args, -1L)
+}
+
 if (length(args) < 1L || length(args) > 2L) {
   stop(
-    "Usage: Rscript 01_build_observed_flood_catalogue.R <dirMain> [ncores]"
+    "Usage: Rscript 01_build_observed_flood_catalogue.R <dirMain> [ncores] [--force]"
   )
 }
 
@@ -51,6 +56,24 @@ if (length(ncores) != 1L || is.na(ncores) || ncores < 1L) {
 
 dirOut  <- file.path(dirMain, "data", "flood")
 dirDiag <- file.path(dirOut, "diagnostics")
+
+# Protect all persistent catalogue outputs before starting detection.
+output_files <- c(
+  file.path(dirOut, "observed_flood_catalogue.csv"),
+  file.path(dirDiag, "observed_flood_candidates.csv"),
+  file.path(dirDiag, "observed_flood_excluded.csv"),
+  file.path(dirDiag, "observed_flood_summary.csv")
+)
+
+existing <- output_files[file.exists(output_files)]
+
+if (length(existing) && !force) {
+  stop(
+    "Existing flood catalogue output(s):\n",
+    paste(existing, collapse = "\n"),
+    "\nUse --force to explicitly allow recalculation."
+  )
+}
 
 dir.create(dirOut, recursive = TRUE, showWarnings = FALSE)
 dir.create(dirDiag, recursive = TRUE, showWarnings = FALSE)
