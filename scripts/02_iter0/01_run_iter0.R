@@ -10,9 +10,15 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 5L) {
-  stop("Usage: Rscript 01_run_iter0.R <basinID> <zDecision> <work_dir> <config_file> <dirMain>")
+if (
+  length(args) < 5L ||
+  length(args) > 6L ||
+  (length(args) == 6L && args[6] != "--force")
+) {
+  stop("Usage: Rscript 01_run_iter0.R <basinID> <zDecision> <work_dir> <config_file> <dirMain> [--force]")
 }
+
+force <- length(args) == 6L
 
 basinID <- as.character(args[1])
 zDecision <- as.character(args[2])
@@ -25,6 +31,21 @@ source(file.path(dirMain, "scripts/functions/fuse.R"))
 
 experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
+
+# Protect the immutable initial ensemble against accidental replacement.
+iter0_file <- file.path(
+  paths$iter0,
+  paste0("zDecision_", zDecision),
+  basinID,
+  paste0("iter0_", basinID, "_zDec_", zDecision, ".RData")
+)
+
+if (file.exists(iter0_file) && !force) {
+  stop(
+    "Iter0 result already exists: ", iter0_file,
+    "\nUse --force to explicitly allow recalculation."
+  )
+}
 
 suppressPackageStartupMessages({
   library(ncdf4)
