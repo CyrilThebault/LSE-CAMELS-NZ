@@ -1,3 +1,11 @@
+args <- commandArgs(trailingOnly = TRUE)
+
+if (length(args) > 1L || (length(args) == 1L && args[1] != "--force")) {
+  stop("Usage: Rscript 05_build_observed_flood_daily_units.R [--force]")
+}
+
+force <- length(args) == 1L
+
 source("scripts/functions/common.R")
 
 exp <- load_workflow_config("config/experiment_hourly.R")
@@ -7,11 +15,24 @@ input <- "data/flood/qc/observed_flood_catalogue_reviewed.csv"
 
 output_dir <- Sys.getenv(
   "FLOOD_DAILY_OUTPUT_DIR",
-  unset = "/private/tmp/lse_flood_daily_units"
+  unset = file.path("data", "flood", "qc")
 )
-dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
 out_units <- file.path(output_dir, "observed_flood_daily_units.csv")
 out_mapping <- file.path(output_dir, "observed_flood_daily_event_mapping.csv")
+
+existing <- c(out_units, out_mapping)
+existing <- existing[file.exists(existing)]
+
+if (length(existing) && !force) {
+  stop(
+    "Existing daily flood output(s):\n",
+    paste(existing, collapse = "\n"),
+    "\nUse --force to explicitly allow recalculation."
+  )
+}
+
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # ==================================================
 # 1. Read canonical hourly catalogue
