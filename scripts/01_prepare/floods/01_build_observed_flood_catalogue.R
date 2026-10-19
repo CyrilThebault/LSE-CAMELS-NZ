@@ -17,7 +17,7 @@
 # both hourly and daily experiments on the same observed floods.
 #
 # Usage:
-#   Rscript scripts/05_analysis/floods/01_build_observed_flood_catalogue.R \
+#   Rscript scripts/01_prepare/floods/01_build_observed_flood_catalogue.R \
 #     /path/to/LSE-CAMELS-NZ [ncores]
 # ==============================================================================
 

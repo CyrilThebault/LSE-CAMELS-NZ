@@ -632,7 +632,7 @@ controlled by `NCORES` locally and by `SLURM_CPUS_PER_TASK` on HPC.
 export DIR_MAIN="$PWD"
 export NCORES=4
 
-bash scripts/05_analysis/floods/01_build_observed_flood_catalogue_local.sh
+bash scripts/01_prepare/floods/01_build_observed_flood_catalogue_local.sh
 ```
 
 ### On ARC HPC
@@ -640,7 +640,7 @@ bash scripts/05_analysis/floods/01_build_observed_flood_catalogue_local.sh
 ```bash
 export DIR_MAIN="$PWD"
 
-sbatch scripts/05_analysis/floods/01_build_observed_flood_catalogue_hpc_arc.slurm
+sbatch scripts/01_prepare/floods/01_build_observed_flood_catalogue_hpc_arc.slurm
 ```
 
 ### On FIR HPC
@@ -648,7 +648,7 @@ sbatch scripts/05_analysis/floods/01_build_observed_flood_catalogue_hpc_arc.slur
 ```bash
 export DIR_MAIN="$PWD"
 
-sbatch scripts/05_analysis/floods/01_build_observed_flood_catalogue_hpc_fir.slurm
+sbatch scripts/01_prepare/floods/01_build_observed_flood_catalogue_hpc_fir.slurm
 ```
 
 ## 9. Visualise and quality-control the observed flood-event catalogue
@@ -666,13 +666,13 @@ or automatically exclude flagged events.
 The generic visualiser is:
 
 ```text
-scripts/05_analysis/floods/02_plot_observed_flood_catalogue.R
+scripts/01_prepare/floods/02_plot_observed_flood_catalogue.R
 ```
 
 Its command-line interface is:
 
 ```bash
-Rscript scripts/05_analysis/floods/02_plot_observed_flood_catalogue.R \
+Rscript scripts/01_prepare/floods/02_plot_observed_flood_catalogue.R \
   <dirMain> <events.csv> <ID> <output.pdf>
 ```
 
@@ -703,14 +703,14 @@ Plot the complete canonical catalogue:
 
 ```bash
 DIR_MAIN="$PWD" NCORES=4 \
-  bash scripts/05_analysis/floods/02_plot_observed_flood_catalogue_local.sh
+  bash scripts/01_prepare/floods/02_plot_observed_flood_catalogue_local.sh
 ```
 
 Plot one basin:
 
 ```bash
 DIR_MAIN="$PWD" BASIN_IDS=9140 NCORES=1 \
-  bash scripts/05_analysis/floods/02_plot_observed_flood_catalogue_local.sh
+  bash scripts/01_prepare/floods/02_plot_observed_flood_catalogue_local.sh
 ```
 
 Plot QC review events for one basin:
@@ -718,7 +718,7 @@ Plot QC review events for one basin:
 ```bash
 DIR_MAIN="$PWD" BASIN_IDS=9140 NCORES=1 \
 EVENTS_FILE="$PWD/data/flood/qc/observed_flood_qc_review.csv" \
-  bash scripts/05_analysis/floods/02_plot_observed_flood_catalogue_local.sh
+  bash scripts/01_prepare/floods/02_plot_observed_flood_catalogue_local.sh
 ```
 
 To generate all QC PDFs, select only basins listed in the QC review CSV:
@@ -728,28 +728,28 @@ QC_IDS=$(Rscript -e 'x <- read.csv("data/flood/qc/observed_flood_qc_review.csv")
 
 DIR_MAIN="$PWD" NCORES=4 BASIN_IDS="$QC_IDS" \
 EVENTS_FILE="$PWD/data/flood/qc/observed_flood_qc_review.csv" \
-  bash scripts/05_analysis/floods/02_plot_observed_flood_catalogue_local.sh
+  bash scripts/01_prepare/floods/02_plot_observed_flood_catalogue_local.sh
 ```
 
 #### ARC HPC
 
 ```bash
 export DIR_MAIN="$PWD"
-sbatch scripts/05_analysis/floods/02_plot_observed_flood_catalogue_hpc_arc.slurm
+sbatch scripts/01_prepare/floods/02_plot_observed_flood_catalogue_hpc_arc.slurm
 ```
 
 For a single-basin test:
 
 ```bash
 sbatch --export=ALL,DIR_MAIN="$PWD",BASIN_IDS=9140,NCORES=1 \
-  scripts/05_analysis/floods/02_plot_observed_flood_catalogue_hpc_arc.slurm
+  scripts/01_prepare/floods/02_plot_observed_flood_catalogue_hpc_arc.slurm
 ```
 
 #### Fir HPC
 
 ```bash
 export DIR_MAIN="$PWD"
-sbatch scripts/05_analysis/floods/02_plot_observed_flood_catalogue_hpc_fir.slurm
+sbatch scripts/01_prepare/floods/02_plot_observed_flood_catalogue_hpc_fir.slurm
 ```
 
 All three launchers support `DIR_MAIN`, `NCORES`, `BASIN_IDS`, `EVENTS_FILE`,
@@ -760,7 +760,7 @@ and `OUT_DIR`. HPC execution should be validated on the respective cluster.
 Run the screening script from the repository root:
 
 ```bash
-NCORES=8 Rscript scripts/05_analysis/floods/03_screen_observed_flood_qc.R .
+NCORES=8 Rscript scripts/01_prepare/floods/03_screen_observed_flood_qc.R .
 ```
 
 It reads `data/flood/observed_flood_catalogue.csv` and writes:
@@ -806,7 +806,7 @@ backed up independently and distributed with the final research results
 ### 9.4. Finalise the reviewed catalogue
 
 ```bash
-Rscript scripts/05_analysis/floods/04_finalize_observed_flood_qc.R .
+Rscript scripts/01_prepare/floods/04_finalize_observed_flood_qc.R .
 ```
 
 This script requires decisions for all events flagged for review. If any are

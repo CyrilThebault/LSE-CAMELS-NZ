@@ -42,7 +42,7 @@ export OMP_THREAD_LIMIT=1
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN to the LSE-CAMELS-NZ repository root}"
 NCORES="${NCORES:-${SLURM_CPUS_PER_TASK:-1}}"
 
-SCRIPT="$DIR_MAIN/scripts/05_analysis/floods/02_plot_observed_flood_catalogue.R"
+SCRIPT="$DIR_MAIN/scripts/01_prepare/floods/02_plot_observed_flood_catalogue.R"
 BASIN_FILE="${BASIN_FILE:-$DIR_MAIN/config/basins.txt}"
 EVENTS_FILE="${EVENTS_FILE:-$DIR_MAIN/data/flood/observed_flood_catalogue.csv}"
 # Select default output directory and filename from the input catalogue.

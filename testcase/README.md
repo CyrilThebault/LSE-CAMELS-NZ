@@ -226,7 +226,7 @@ root, run:
 export DIR_MAIN="$PWD"
 export NCORES=4
 
-bash scripts/05_analysis/floods/01_build_observed_flood_catalogue_local.sh
+bash scripts/01_prepare/floods/01_build_observed_flood_catalogue_local.sh
 ```
 
 The resulting catalogue and diagnostics are written to:

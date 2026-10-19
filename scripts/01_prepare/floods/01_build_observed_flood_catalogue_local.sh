@@ -22,6 +22,6 @@ NCORES="${NCORES:-4}"
 # ==============================================================================
 
 Rscript \
-  "$DIR_MAIN/scripts/05_analysis/floods/01_build_observed_flood_catalogue.R" \
+  "$DIR_MAIN/scripts/01_prepare/floods/01_build_observed_flood_catalogue.R" \
   "$DIR_MAIN" \
   "$NCORES"
