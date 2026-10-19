@@ -299,16 +299,16 @@ For example:
 export DIR_MAIN="$PWD"
 export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
 
-Rscript scripts/04_experiments/01_create_experiment_splits.R \
+Rscript scripts/03_experiments/01_create_experiment_splits.R \
   allseen "$CONFIG_FILE" "$DIR_MAIN"
 
-Rscript scripts/04_experiments/01_create_experiment_splits.R \
+Rscript scripts/03_experiments/01_create_experiment_splits.R \
   loo "$CONFIG_FILE" "$DIR_MAIN"
 
-Rscript scripts/04_experiments/01_create_experiment_splits.R \
+Rscript scripts/03_experiments/01_create_experiment_splits.R \
   kfold "$CONFIG_FILE" "$DIR_MAIN" 2
 
-Rscript scripts/04_experiments/01_create_experiment_splits.R \
+Rscript scripts/03_experiments/01_create_experiment_splits.R \
   cluster "$CONFIG_FILE" "$DIR_MAIN"
 ```
 

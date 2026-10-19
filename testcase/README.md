@@ -190,7 +190,7 @@ For example, to create a 2-fold cross-validation experiment:
 export DIR_MAIN="$PWD"
 export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
 
-Rscript scripts/04_experiments/01_create_experiment_splits.R \
+Rscript scripts/03_experiments/01_create_experiment_splits.R \
   kfold "$CONFIG_FILE" "$DIR_MAIN" 2
 ```
 
