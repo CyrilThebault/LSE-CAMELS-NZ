@@ -2,6 +2,13 @@ library(ncdf4)
 library(parallel)
 
 args <- commandArgs(trailingOnly = TRUE)
+
+force <- length(args) > 0L && tail(args, 1L) == "--force"
+if (force) args <- head(args, -1L)
+
+if (length(args) > 1L) {
+  stop("Usage: Rscript 03_screen_observed_flood_qc.R [dirMain] [--force]")
+}
 dirMain <- if (length(args)) {
   normalizePath(args[1], mustWork = TRUE)
 } else {
@@ -30,10 +37,21 @@ dirQC <- Sys.getenv(
   "QC_OUT_DIR",
   file.path(dirMain, "data", "flood", "qc")
 )
-dir.create(dirQC, recursive = TRUE, showWarnings = FALSE)
-
 fileOut <- file.path(dirQC, "observed_flood_qc.csv")
 fileReview <- file.path(dirQC, "observed_flood_qc_review.csv")
+
+existing <- c(fileOut, fileReview)
+existing <- existing[file.exists(existing)]
+
+if (length(existing) && !force) {
+  stop(
+    "Existing flood QC output(s):\n",
+    paste(existing, collapse = "\n"),
+    "\nUse --force to explicitly allow recalculation."
+  )
+}
+
+dir.create(dirQC, recursive = TRUE, showWarnings = FALSE)
 
 NCORES <- as.integer(Sys.getenv("NCORES", "8"))
 available_cores <- parallel::detectCores()

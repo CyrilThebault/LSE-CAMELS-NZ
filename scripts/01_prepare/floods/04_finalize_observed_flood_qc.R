@@ -1,6 +1,13 @@
 #!/usr/bin/env Rscript
 
 args <- commandArgs(trailingOnly=TRUE)
+
+force <- length(args) > 0L && tail(args, 1L) == "--force"
+if (force) args <- head(args, -1L)
+
+if (length(args) > 1L) {
+  stop("Usage: Rscript 04_finalize_observed_flood_qc.R [dirMain] [--force]")
+}
 dirMain <- if (length(args)) normalizePath(args[1], mustWork=TRUE) else
   normalizePath(".", mustWork=TRUE)
 
@@ -10,6 +17,13 @@ fileDecisions <- file.path(dirMain, "data", "flood", "qc",
                            "observed_flood_qc_decisions.csv")
 fileOut <- file.path(dirMain, "data", "flood", "qc",
                     "observed_flood_catalogue_reviewed.csv")
+
+if (file.exists(fileOut) && !force) {
+  stop(
+    "Reviewed flood catalogue already exists: ", fileOut,
+    "\nUse --force to explicitly allow replacement."
+  )
+}
 
 clean_chr <- function(x) {
   x <- trimws(as.character(x))
