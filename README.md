@@ -361,7 +361,7 @@ For example, for a k-fold experiment:
 export DIR_MAIN="$PWD"
 export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
 
-bash scripts/03_emulator/submit_LSE_experiment_hpc_arc.sh \
+bash scripts/04_simulations/emulator/submit_LSE_experiment_hpc_arc.sh \
   "$DIR_MAIN" \
   "$CONFIG_FILE" \
   kfold
@@ -395,7 +395,7 @@ export EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
 export ZDECISION=126
 export NREFINE=2
 
-sbatch scripts/03_emulator/run_LSE_split_hpc_arc.slurm
+sbatch scripts/04_simulations/emulator/run_LSE_split_hpc_arc.slurm
 ```
 
 For an hourly experiment, use the corresponding directory under
@@ -415,7 +415,7 @@ export ZDECISION=126
 export NREFINE=2
 export NCORES=4
 
-bash scripts/03_emulator/run_LSE_split_local.sh
+bash scripts/04_simulations/emulator/run_LSE_split_local.sh
 ```
 
 For an hourly experiment, set:

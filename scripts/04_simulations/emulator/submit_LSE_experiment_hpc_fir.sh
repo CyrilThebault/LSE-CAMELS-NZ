@@ -2,36 +2,29 @@
 
 set -euo pipefail
 
-. /work/comphyd_lab/local/modules/spack/2024v5/lmod-init-bash
 
-module purge
-module unuse $MODULEPATH
-module use /work/comphyd_lab/local/modules/spack/2024v5/modules/linux-rocky8-x86_64/Core/
-
-module load gcc/14.2.0
-module load cmake/3.30.2
-module load hdf5/1.14.3
-module load netcdf-c/4.9.2
-module load netcdf-fortran/4.6.1
-module load r/4.4.1
 
 # ==============================================================================
-# Submit all folds of one LSE experiment on ARC HPC
+# Submit all splits of one LSE experiment on FIR
 #
 # Example:
-#   bash submit_LSE_experiment_hpc_arc.sh \
-#     /work/comphyd_lab/users/cyril.thebault/ESNZ/02_DATA/LSE-CAMELS-NZ \
-#     /work/comphyd_lab/users/cyril.thebault/ESNZ/02_DATA/LSE-CAMELS-NZ/config/experiment_hourly.R \
+#   bash submit_LSE_experiment_hpc_fir.sh \
+#     /project/6079554/thebault/ESNZ/02_DATA/LSE-CAMELS-NZ \
+#     /project/6079554/thebault/ESNZ/02_DATA/LSE-CAMELS-NZ/config/experiment_hourly.R \
 #     kfold
 #
 # Optional environment overrides:
-#   ZDECISION=126 NREFINE=2 bash submit_LSE_experiment_hpc_arc.sh \
+#   ZDECISION=126 NREFINE=2 bash submit_LSE_experiment_hpc_fir.sh \
 #     <DIR_MAIN> <CONFIG_FILE> <experiment>
 # ==============================================================================
 
+module --force purge
+module load StdEnv/2023
+module load r/4.4.0
+
 if [ "$#" -ne 3 ]; then
-  echo "Usage: bash submit_LSE_experiment_hpc_arc.sh <DIR_MAIN> <CONFIG_FILE> <experiment>"
-  echo "Example: bash submit_LSE_experiment_hpc_arc.sh /path/to/LSE-CAMELS-NZ /path/to/LSE-CAMELS-NZ/config/experiment_hourly.R kfold"
+  echo "Usage: bash submit_LSE_experiment_hpc_fir.sh <DIR_MAIN> <CONFIG_FILE> <experiment>"
+  echo "Example: bash submit_LSE_experiment_hpc_fir.sh /path/to/LSE-CAMELS-NZ /path/to/LSE-CAMELS-NZ/config/experiment_hourly.R kfold"
   exit 1
 fi
 
@@ -45,7 +38,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
   exit 1
 fi
 
-SLURM_SCRIPT="$DIR_MAIN/scripts/03_emulator/run_LSE_split_hpc_arc.slurm"
+SLURM_SCRIPT="$DIR_MAIN/scripts/04_simulations/emulator/run_LSE_split_hpc_fir.slurm"
 
 if [ ! -f "$SLURM_SCRIPT" ]; then
   echo "Slurm script does not exist:"
@@ -77,41 +70,40 @@ echo "Timestep     : $TIMESTEP"
 echo "Experiment   : $EXPERIMENT"
 echo "zDecision    : $ZDECISION"
 echo "Refinements  : $NREFINE"
-echo "Config       : $CONFIG_FILE"
 echo "============================================================"
 
 
 # ==============================================================================
-# Discover folds
+# Discover splits
 # ==============================================================================
 
-folds=()
+splits=()
 
-for fold in "$EXPERIMENT_ROOT"/*; do
-  if [ -d "$fold" ] && [ -f "$fold/train_basins.txt" ] && [ -f "$fold/test_basins.txt" ]; then
-    folds+=("$fold")
+for split in "$EXPERIMENT_ROOT"/*; do
+  if [ -d "$split" ] && [ -f "$split/train_basins.txt" ] && [ -f "$split/test_basins.txt" ]; then
+    splits+=("$split")
   fi
 done
 
-if [ "${#folds[@]}" -eq 0 ]; then
-  echo "No valid experiment folds found under:"
+if [ "${#splits[@]}" -eq 0 ]; then
+  echo "No valid experiment splits found under:"
   echo "  $EXPERIMENT_ROOT"
   exit 1
 fi
 
-echo "Folds found: ${#folds[@]}"
+echo "Splits found: ${#splits[@]}"
 echo
 
 
 # ==============================================================================
-# Submit one Slurm job per fold
+# Submit one Slurm job per split
 # ==============================================================================
 
-for EXPERIMENT_DIR in "${folds[@]}"; do
+for EXPERIMENT_DIR in "${splits[@]}"; do
 
-  fold_name="$(basename "$EXPERIMENT_DIR")"
+  split_name="$(basename "$EXPERIMENT_DIR")"
 
-  echo "Submitting $fold_name"
+  echo "Submitting $split_name"
 
   job_id=$(
     sbatch \
@@ -124,4 +116,4 @@ for EXPERIMENT_DIR in "${folds[@]}"; do
 done
 
 echo
-echo "All ${#folds[@]} fold(s) submitted."
+echo "All ${#splits[@]} split(s) submitted."
