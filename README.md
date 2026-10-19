@@ -434,7 +434,7 @@ Results are collected separately for each temporal resolution.
 For daily:
 
 ```bash
-Rscript scripts/05_analysis/01_collect_results.R \
+Rscript scripts/06_analysis/01_collect_results.R \
   "$PWD/experiments/daily/kfold" \
   126 \
   "$PWD/config/experiment_daily.R" \
@@ -444,7 +444,7 @@ Rscript scripts/05_analysis/01_collect_results.R \
 For hourly:
 
 ```bash
-Rscript scripts/05_analysis/01_collect_results.R \
+Rscript scripts/06_analysis/01_collect_results.R \
   "$PWD/experiments/hourly/kfold" \
   126 \
   "$PWD/config/experiment_hourly.R" \
@@ -461,7 +461,7 @@ After collecting the results, performance figures can be generated for any
 experiment type with:
 
 ```bash
-Rscript scripts/05_analysis/02_plot_experiment_performance.R \
+Rscript scripts/06_analysis/02_plot_experiment_performance.R \
   "$PWD/experiments/<timestep>/<experiment>" \
   "$PWD/config/experiment_<timestep>.R" \
   "$PWD"
@@ -470,7 +470,7 @@ Rscript scripts/05_analysis/02_plot_experiment_performance.R \
 For example:
 
 ```bash
-Rscript scripts/05_analysis/02_plot_experiment_performance.R \
+Rscript scripts/06_analysis/02_plot_experiment_performance.R \
   "$PWD/experiments/hourly/kfold" \
   "$PWD/config/experiment_hourly.R" \
   "$PWD"
@@ -479,7 +479,7 @@ Rscript scripts/05_analysis/02_plot_experiment_performance.R \
 or:
 
 ```bash
-Rscript scripts/05_analysis/02_plot_experiment_performance.R \
+Rscript scripts/06_analysis/02_plot_experiment_performance.R \
   "$PWD/experiments/hourly/allseen" \
   "$PWD/config/experiment_hourly.R" \
   "$PWD"
@@ -517,7 +517,7 @@ The spatial plotting dependencies are `sf` and `viridisLite`, both checked by
 Two or more experiments can be compared with:
 
 ```bash
-Rscript scripts/05_analysis/03_compare_experiment_performance.R \
+Rscript scripts/06_analysis/03_compare_experiment_performance.R \
   "$PWD" \
   "$PWD/experiments/hourly/kfold" \
   "$PWD/experiments/hourly/allseen"
@@ -527,7 +527,7 @@ Experiments from different temporal resolutions can also be compared. For
 example:
 
 ```bash
-Rscript scripts/05_analysis/03_compare_experiment_performance.R \
+Rscript scripts/06_analysis/03_compare_experiment_performance.R \
   "$PWD" \
   "$PWD/experiments/daily/kfold" \
   "$PWD/experiments/hourly/kfold"

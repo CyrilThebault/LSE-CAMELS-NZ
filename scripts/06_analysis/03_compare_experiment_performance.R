@@ -10,14 +10,14 @@
 #
 # Hourly k-fold versus hourly allseen:
 #
-# Rscript scripts/05_analysis/03_compare_experiment_performance.R \
+# Rscript scripts/06_analysis/03_compare_experiment_performance.R \
 #   "$PWD" \
 #   "$PWD/experiments/hourly/kfold" \
 #   "$PWD/experiments/hourly/allseen"
 #
 # Daily versus hourly k-fold:
 #
-# Rscript scripts/05_analysis/03_compare_experiment_performance.R \
+# Rscript scripts/06_analysis/03_compare_experiment_performance.R \
 #   "$PWD" \
 #   "$PWD/experiments/daily/kfold" \
 #   "$PWD/experiments/hourly/kfold"
