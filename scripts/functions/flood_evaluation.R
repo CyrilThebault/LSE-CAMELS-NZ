@@ -7,7 +7,7 @@ evaluate_daily_flood_units <- function(
   timezone = "Etc/GMT-12"
 ) {
 
-  required_paired <- c("date", "time", "qObs", "qh", "qd")
+  required_paired <- c("date", "time", "qObs", "qSim")
   required_units <- c(
     "ID", "daily_unit_id", "first_day",
     "last_day", "n_events", "n_days"
@@ -16,6 +16,7 @@ evaluate_daily_flood_units <- function(
   stopifnot(
     all(required_paired %in% names(paired)),
     all(required_units %in% names(units)),
+    inherits(paired$time, "POSIXct"),
     !anyDuplicated(paired$date),
     !anyDuplicated(units$daily_unit_id)
   )
@@ -76,14 +77,13 @@ evaluate_daily_flood_units <- function(
       n_days = ev$n_days,
       valid = FALSE,
       reason = NA_character_,
-      peak_error_h_pct = NA_real_,
-      peak_error_d_pct = NA_real_,
-      volume_error_h_pct = NA_real_,
-      volume_error_d_pct = NA_real_,
-      peak_lag_h_days = NA_real_,
-      peak_lag_d_days = NA_real_,
-      boundary_h = NA,
-      boundary_d = NA
+      peak_error_pct = NA_real_,
+      volume_error_pct = NA_real_,
+      peak_lag_days = NA_real_,
+      obs_peak_at_boundary = NA,
+      sim_peak_at_boundary = NA,
+      obs_peak_tied = NA,
+      sim_peak_tied = NA
     )
 
     # Never evaluate a partially available event window.
@@ -102,21 +102,14 @@ evaluate_daily_flood_units <- function(
       return(result)
     }
 
-    h <- compute_event_metrics(
-      w$time,
-      w$qObs,
-      w$qh,
+    metrics <- compute_event_metrics(
+      time = w$time,
+      qObs = w$qObs,
+      qSim = w$qSim,
       timestep_seconds = 86400
     )
 
-    d <- compute_event_metrics(
-      w$time,
-      w$qObs,
-      w$qd,
-      timestep_seconds = 86400
-    )
-
-    if (!isTRUE(h$valid) || !isTRUE(d$valid)) {
+    if (!isTRUE(metrics$valid)) {
       result$reason <- "invalid_discharge"
       return(result)
     }
@@ -124,17 +117,18 @@ evaluate_daily_flood_units <- function(
     result$valid <- TRUE
     result$reason <- "ok"
 
-    result$peak_error_h_pct <- h$peak_error_pct
-    result$peak_error_d_pct <- d$peak_error_pct
+    result$peak_error_pct <- metrics$peak_error_pct
+    result$volume_error_pct <- metrics$volume_error_pct
+    result$peak_lag_days <- metrics$peak_lag_steps
 
-    result$volume_error_h_pct <- h$volume_error_pct
-    result$volume_error_d_pct <- d$volume_error_pct
+    result$obs_peak_at_boundary <-
+      metrics$obs_peak_at_boundary
 
-    result$peak_lag_h_days <- h$peak_lag_steps
-    result$peak_lag_d_days <- d$peak_lag_steps
+    result$sim_peak_at_boundary <-
+      metrics$sim_peak_at_boundary
 
-    result$boundary_h <- h$sim_peak_at_boundary
-    result$boundary_d <- d$sim_peak_at_boundary
+    result$obs_peak_tied <- metrics$obs_peak_tied
+    result$sim_peak_tied <- metrics$sim_peak_tied
 
     result
   }

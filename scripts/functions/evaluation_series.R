@@ -1,101 +1,79 @@
-prepare_daily_comparison <- function(
+# ==============================================================================
+# Prepare daily observations and one FUSE simulation for evaluation
+# ==============================================================================
+
+prepare_daily_evaluation <- function(
   qobs_daily,
-  qsim_hourly,
-  qsim_daily,
+  qsim,
+  simulation_timestep,
   timezone = "Etc/GMT-12"
 ) {
 
-  # --------------------------------------------
-  # 1. Validate inputs
-  # --------------------------------------------
-
-  check_series <- function(x, value, label) {
-
-    if (!all(c("time", value) %in% names(x))) {
-      stop(label, ": missing columns")
-    }
-
-    if (!inherits(x$time, "POSIXct")) {
-      stop(label, ": time must be POSIXct")
-    }
-
-    if (!is.numeric(x[[value]])) {
-      stop(label, ": discharge must be numeric")
-    }
-
-    if (
-      nrow(x) == 0L ||
-      anyNA(x$time) ||
-      anyDuplicated(x$time)
-    ) {
-      stop(label, ": empty or invalid time axis")
-    }
-  }
-
-  check_series(qobs_daily, "qObs", "qobs_daily")
-  check_series(qsim_hourly, "qSim", "qsim_hourly")
-  check_series(qsim_daily, "qSim", "qsim_daily")
+  stopifnot(
+    simulation_timestep %in% c("hourly", "daily"),
+    all(c("time", "qObs") %in% names(qobs_daily)),
+    all(c("time", "qSim") %in% names(qsim)),
+    inherits(qobs_daily$time, "POSIXct"),
+    inherits(qsim$time, "POSIXct"),
+    is.numeric(qobs_daily$qObs),
+    is.numeric(qsim$qSim),
+    nrow(qobs_daily) > 0L,
+    nrow(qsim) > 0L,
+    !anyNA(qobs_daily$time),
+    !anyNA(qsim$time),
+    !anyDuplicated(qobs_daily$time),
+    !anyDuplicated(qsim$time)
+  )
 
   nz_date <- function(t) {
     as.Date(format(t, "%Y-%m-%d", tz = timezone))
   }
 
   nz_noon <- function(d) {
-    as.POSIXct(
-      paste(d, "12:00:00"),
-      tz = timezone
-    )
+    as.POSIXct(paste(d, "12:00:00"), tz = timezone)
   }
-
-  # --------------------------------------------
-  # 2. Validate daily timestamps
-  # --------------------------------------------
 
   obs_dates <- nz_date(qobs_daily$time)
-  sim_dates <- nz_date(qsim_daily$time)
 
-  if (
-    anyDuplicated(obs_dates) ||
-    anyDuplicated(sim_dates)
-  ) {
-    stop("Duplicate daily dates")
-  }
-
-  if (
-    !identical(
+  stopifnot(
+    !anyDuplicated(obs_dates),
+    identical(
       as.numeric(qobs_daily$time),
       as.numeric(nz_noon(obs_dates))
-    ) ||
-    !identical(
-      as.numeric(qsim_daily$time),
-      as.numeric(nz_noon(sim_dates))
     )
-  ) {
-    stop("Daily timestamps must be at 12:00 NZST")
-  }
-
-  # --------------------------------------------
-  # 3. Aggregate hourly simulation
-  # --------------------------------------------
-
-  h <- qsim_hourly[
-    order(qsim_hourly$time),
-    ,
-    drop = FALSE
-  ]
-
-  day_keys <- format(
-    h$time,
-    "%Y-%m-%d",
-    tz = timezone
   )
 
-  groups <- split(seq_len(nrow(h)), day_keys)
-  dates <- names(groups)
+  observed <- data.frame(
+    date = obs_dates,
+    qObs = qobs_daily$qObs
+  )
 
-  qh <- vapply(
-    seq_along(groups),
-    function(j) {
+  if (simulation_timestep == "daily") {
+
+    sim_dates <- nz_date(qsim$time)
+
+    stopifnot(
+      !anyDuplicated(sim_dates),
+      identical(
+        as.numeric(qsim$time),
+        as.numeric(nz_noon(sim_dates))
+      )
+    )
+
+    simulated <- data.frame(
+      date = sim_dates,
+      qSim = qsim$qSim
+    )
+
+  } else {
+
+    h <- qsim[order(qsim$time), , drop = FALSE]
+
+    day_keys <- format(h$time, "%Y-%m-%d", tz = timezone)
+    groups <- split(seq_len(nrow(h)), day_keys)
+    dates <- names(groups)
+
+    values <- vapply(seq_along(groups), function(j) {
 
       ix <- groups[[j]]
 
@@ -103,7 +81,6 @@ prepare_daily_comparison <- function(
         return(NA_real_)
       }
 
-      # Require exactly 00:30, 01:30, ..., 23:30
       expected <- as.POSIXct(
         paste(dates[j], "00:30:00"),
         tz = timezone
@@ -116,72 +93,40 @@ prepare_daily_comparison <- function(
         return(NA_real_)
       }
 
-      q <- h$qSim[ix]
-
-      if (!all(is.finite(q))) {
+      if (!all(is.finite(h$qSim[ix]))) {
         return(NA_real_)
       }
 
-      sum(q)
-    },
-    numeric(1)
-  )
+      sum(h$qSim[ix])
 
-  hourly_daily <- data.frame(
-    date = as.Date(dates),
-    qh = as.numeric(qh)
-  )
+    }, numeric(1))
 
-  # --------------------------------------------
-  # 4. Prepare daily series
-  # --------------------------------------------
+    simulated <- data.frame(
+      date = as.Date(dates),
+      qSim = as.numeric(values)
+    )
+  }
 
-  observed <- data.frame(
-    date = obs_dates,
-    qObs = qobs_daily$qObs
-  )
-
-  daily_sim <- data.frame(
-    date = sim_dates,
-    qd = qsim_daily$qSim
-  )
-
-  # --------------------------------------------
-  # 5. Strictly common daily support
-  # --------------------------------------------
-
-  joined <- Reduce(
-    function(a, b) merge(a, b, by = "date"),
-    list(observed, hourly_daily, daily_sim)
-  )
+  joined <- merge(observed, simulated, by = "date")
 
   complete <- (
     is.finite(joined$qObs) &
-    is.finite(joined$qh) &
-    is.finite(joined$qd)
+    is.finite(joined$qSim)
   )
 
   paired <- joined[complete, , drop = FALSE]
   paired <- paired[order(paired$date), , drop = FALSE]
 
-  if (
-    nrow(paired) == 0L ||
-    anyDuplicated(paired$date)
-  ) {
+  if (!nrow(paired)) {
     stop("No valid paired daily observations")
   }
 
   paired$time <- nz_noon(paired$date)
 
-  # --------------------------------------------
-  # 6. Diagnostics
-  # --------------------------------------------
-
   diagnostics <- data.frame(
     qobs_days = nrow(observed),
-    hourly_days = nrow(hourly_daily),
-    hourly_complete_days = sum(is.finite(qh)),
-    daily_sim_days = nrow(daily_sim),
+    simulated_days = nrow(simulated),
+    simulated_complete_days = sum(is.finite(simulated$qSim)),
     calendar_overlap_days = nrow(joined),
     valid_paired_days = nrow(paired)
   )
