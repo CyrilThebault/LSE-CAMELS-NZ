@@ -36,21 +36,73 @@ if (!file.exists(sim_file) || !file.exists(meta_file)) {
 meta <- readRDS(meta_file)
 
 required_meta <- c(
-  "experiment_dir", "config_file", "basinID",
-  "zDecision", "modelStep", "phase", "emulator"
+  "experiment_dir", "config_file", "basinID", "zDecision"
 )
 
 stopifnot(all(required_meta %in% names(meta)))
+
+# Legacy emulator metadata remain supported.
+method_type <- if (is.null(meta$method_type)) {
+  "emulator"
+} else {
+  meta$method_type
+}
+
+stopifnot(method_type %in% c("emulator", "localcalib"))
+
+if (method_type == "emulator") {
+
+  stopifnot(
+    all(c("phase", "modelStep") %in% names(meta)),
+    meta$phase %in% c("train", "test"),
+    length(meta$modelStep) == 1L,
+    is.finite(meta$modelStep),
+    meta$modelStep >= 0
+  )
+
+  method <- if (is.null(meta$method)) {
+    meta$emulator
+  } else {
+    meta$method
+  }
+
+  relative_path <- file.path(
+    paste0("zDecision_", meta$zDecision),
+    meta$phase,
+    as.character(meta$basinID),
+    paste0("step_", meta$modelStep),
+    method
+  )
+
+} else {
+
+  method <- meta$method
+
+  stopifnot(
+    identical(method, "sce"),
+    is.null(meta$phase),
+    is.null(meta$modelStep)
+  )
+
+  relative_path <- file.path(
+    paste0("zDecision_", meta$zDecision),
+    as.character(meta$basinID),
+    method
+  )
+}
+
+stopifnot(
+  is.character(method),
+  length(method) == 1L,
+  !is.na(method),
+  nzchar(method)
+)
 
 # Verify that metadata identifies the actual simulation directory.
 expected_hydro_dir <- file.path(
   meta$experiment_dir,
   "hydrographs",
-  paste0("zDecision_", meta$zDecision),
-  meta$phase,
-  as.character(meta$basinID),
-  paste0("step_", meta$modelStep),
-  meta$emulator
+  relative_path
 )
 
 if (!identical(
@@ -72,11 +124,7 @@ basinID <- as.character(meta$basinID)
 out_dir <- file.path(
   meta$experiment_dir,
   "evaluation",
-  paste0("zDecision_", meta$zDecision),
-  meta$phase,
-  basinID,
-  paste0("step_", meta$modelStep),
-  meta$emulator
+  relative_path
 )
 
 expected_names <- c("global_native.csv", "flood_native.csv")
@@ -320,9 +368,10 @@ evaluation_metadata <- list(
   timestep = experiment$timestep,
   basinID = basinID,
   zDecision = meta$zDecision,
-  modelStep = meta$modelStep,
-  phase = meta$phase,
-  emulator = meta$emulator,
+  method_type = method_type,
+  method = method,
+  modelStep = if (method_type == "emulator") meta$modelStep else NULL,
+  phase = if (method_type == "emulator") meta$phase else NULL,
   calibration_start = experiment$calibration_start,
   calibration_end = experiment$calibration_end,
   evaluation_start = experiment$evaluation_start,
