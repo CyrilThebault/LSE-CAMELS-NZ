@@ -53,7 +53,23 @@ evaluate_daily_flood_units <- function(
   u <- u[eligible, , drop = FALSE]
 
   if (!nrow(u)) {
-    stop("No daily flood units in the evaluation period")
+    return(data.frame(
+      ID = character(),
+      daily_unit_id = character(),
+      first_day = as.Date(character()),
+      last_day = as.Date(character()),
+      n_events = integer(),
+      n_days = integer(),
+      valid = logical(),
+      reason = character(),
+      peak_error_pct = numeric(),
+      volume_error_pct = numeric(),
+      peak_lag_days = numeric(),
+      obs_peak_at_boundary = logical(),
+      sim_peak_at_boundary = logical(),
+      obs_peak_tied = logical(),
+      sim_peak_tied = logical()
+    ))
   }
 
   evaluate_one <- function(i) {
@@ -194,7 +210,22 @@ evaluate_hourly_flood_events <- function(
   end <- end[within_period]
 
   if (!nrow(e)) {
-    stop("No eligible hourly events in evaluation period")
+    return(data.frame(
+      ID = character(),
+      event_id = character(),
+      start_time = as.POSIXct(character(), tz = timezone),
+      end_time = as.POSIXct(character(), tz = timezone),
+      n_hours = integer(),
+      valid = logical(),
+      reason = character(),
+      peak_error_pct = numeric(),
+      volume_error_pct = numeric(),
+      peak_lag_h = numeric(),
+      obs_peak_at_boundary = logical(),
+      sim_peak_at_boundary = logical(),
+      obs_peak_tied = logical(),
+      sim_peak_tied = logical()
+    ))
   }
 
   stopifnot(!anyDuplicated(e$event_id))
