@@ -44,8 +44,22 @@ DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
 CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
 EXPERIMENT_DIR="${EXPERIMENT_DIR:?Set EXPERIMENT_DIR to one split directory}"
 
-ZDECISION="${ZDECISION:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$zDecision)")}"
-NREFINE="${NREFINE:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$nRefinementSteps)")}"
+CONFIG_VALUES="$(
+  Rscript - "$DIR_MAIN" "$CONFIG_FILE" <<'RS'
+args <- commandArgs(trailingOnly = TRUE)
+source(file.path(args[1], "scripts/functions/common.R"))
+experiment <- load_workflow_config(args[2])
+cat(
+  experiment$zDecision,
+  experiment$nRefinementSteps
+)
+RS
+)"
+
+read -r CONFIG_ZDECISION CONFIG_NREFINE <<< "$CONFIG_VALUES"
+
+ZDECISION="${ZDECISION:-$CONFIG_ZDECISION}"
+NREFINE="${NREFINE:-$CONFIG_NREFINE}"
 
 NCORES="${SLURM_CPUS_PER_TASK:-10}"
 
