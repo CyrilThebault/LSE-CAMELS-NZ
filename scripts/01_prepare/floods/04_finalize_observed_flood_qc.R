@@ -131,10 +131,6 @@ cat("Completed        :", sum(completed), "\n")
 cat("Pending reviews  :", length(pending), "\n")
 
 if (length(pending)) {
-  if (file.exists(fileOut)) {
-    unlink(fileOut)
-  }
-
   cat("\nFirst pending event IDs:\n")
   print(head(catalogue$event_id[pending], 20L), quote=FALSE)
   stop("QC review is incomplete; no finalized catalogue was written.")
