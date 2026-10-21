@@ -10,9 +10,16 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 2L) {
-  stop("Usage: Rscript 05_validate_preparation.R <config_file> <dirMain>")
+if (
+  length(args) < 2L ||
+  length(args) > 3L ||
+  (length(args) == 3L && !args[3] %in% c("--check", "--force"))
+) {
+  stop("Usage: Rscript 05_validate_preparation.R <config_file> <dirMain> [--check|--force]")
 }
+
+check <- length(args) == 3L && args[3] == "--check"
+force <- length(args) == 3L && args[3] == "--force"
 
 config_file <- normalizePath(args[1], mustWork = TRUE)
 dirMain <- normalizePath(args[2], mustWork = TRUE)
@@ -23,6 +30,23 @@ source(file.path(dirMain, "scripts/functions/basins.R"))
 experiment <- load_workflow_config(config_file)
 time_info <- get_timestep_info(experiment)
 paths <- project_paths(dirMain, experiment)
+
+attribute_qc_file <- file.path(paths$useful, "attribute_QC.csv")
+basin_qc_file <- file.path(paths$useful, "basin_attribute_QC.csv")
+report_file <- file.path(paths$preparation, "preparation_report.csv")
+
+if (!check && !force) {
+  output_files <- c(attribute_qc_file, basin_qc_file, report_file)
+  existing_files <- output_files[file.exists(output_files)]
+
+  if (length(existing_files) > 0L) {
+    stop(
+      "Preparation report(s) already exist:\n",
+      paste(existing_files, collapse = "\n"),
+      "\nUse --check for read-only validation or --force to replace reports."
+    )
+  }
+}
 
 suppressPackageStartupMessages(library(ncdf4))
 
@@ -112,9 +136,6 @@ attribute_qc <- data.frame(
   n_unique = vapply(attribute_data, function(x) length(unique(na.omit(x))), integer(1))
 )
 
-write.csv(attribute_qc, file.path(paths$useful, "attribute_QC.csv"), row.names = FALSE)
-
-
 # ==============================================================================
 # Missing attributes by basin
 # ==============================================================================
@@ -124,22 +145,22 @@ basin_attribute_qc <- data.frame(
   n_missing_attributes = rowSums(is.na(attribute_data))
 )
 
-write.csv(
-  basin_attribute_qc,
-  file.path(paths$useful, "basin_attribute_QC.csv"),
-  row.names = FALSE
-)
-
-
 # ==============================================================================
 # Final preparation report
 # ==============================================================================
 
 report <- do.call(rbind, rows)
 
-ensure_dir(paths$preparation)
+if (!check) {
+  ensure_dir(paths$useful)
+  ensure_dir(paths$preparation)
 
-write.csv(report, file.path(paths$preparation, "preparation_report.csv"), row.names = FALSE)
+  write.csv(attribute_qc, attribute_qc_file, row.names = FALSE)
+  write.csv(basin_attribute_qc, basin_qc_file, row.names = FALSE)
+  write.csv(report, report_file, row.names = FALSE)
+} else {
+  message("Read-only preparation check: no reports written.")
+}
 
 print(report)
 
