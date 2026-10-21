@@ -145,4 +145,22 @@ for (i in seq_len(nrow(paramSearch))) {
 paramSearch$NKGEc <- nkge(paramSearch$KGEc)
 paramSearch$zDecision <- zDecision
 
-save(paramSearch, file = file_candidates)
+# Write results to a temporary file before replacing the original candidates.
+tmp_file <- tempfile(
+  pattern = ".candidates_",
+  tmpdir = dirname(file_candidates),
+  fileext = ".RData"
+)
+
+tryCatch({
+  save(paramSearch, file = tmp_file)
+
+  if (!file.rename(tmp_file, file_candidates)) {
+    stop("Could not replace candidate file: ", file_candidates)
+  }
+}, error = function(e) {
+  if (file.exists(tmp_file)) {
+    unlink(tmp_file)
+  }
+  stop(e)
+})
