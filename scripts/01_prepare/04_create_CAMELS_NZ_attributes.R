@@ -10,9 +10,15 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 2L) {
-  stop("Usage: Rscript 04_create_CAMELS_NZ_attributes.R <config_file> <dirMain>")
+if (
+  length(args) < 2L ||
+  length(args) > 3L ||
+  (length(args) == 3L && args[3] != "--force")
+) {
+  stop("Usage: Rscript 04_create_CAMELS_NZ_attributes.R <config_file> <dirMain> [--force]")
 }
+
+force <- length(args) == 3L
 
 config_file <- normalizePath(args[1], mustWork = TRUE)
 dirMain <- normalizePath(args[2], mustWork = TRUE)
@@ -21,6 +27,16 @@ source(file.path(dirMain, "scripts/functions/common.R"))
 
 experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
+
+attributes_file <- file.path(paths$useful, "attributes.RData")
+
+# Protect existing attributes against accidental replacement.
+if (file.exists(attributes_file) && !force) {
+  stop(
+    "CAMELS-NZ attributes already exist: ", attributes_file,
+    "\nUse --force to explicitly allow replacement."
+  )
+}
 
 dir_attributes <- file.path(experiment$paths$camels_nz, "CAMELS_NZ_Catchment_Atrributes")
 
@@ -125,6 +141,6 @@ if (anyDuplicated(attributes$ID)) {
 
 ensure_dir(paths$useful)
 
-save(attributes, file = file.path(paths$useful, "attributes.RData"))
+save(attributes, file = attributes_file)
 
 message("Saved attributes: ", nrow(attributes), " basins x ", ncol(attributes), " columns")
