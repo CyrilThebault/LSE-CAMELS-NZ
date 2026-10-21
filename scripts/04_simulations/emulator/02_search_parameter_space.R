@@ -62,6 +62,20 @@ if (length(row) != 1L) {
 model_dir <- file.path(experiment_dir, "outputs", paste0("zDecision_", zDecision), "models")
 out_dir <- ensure_dir(file.path(experiment_dir, "outputs", paste0("zDecision_", zDecision), phase, basinID))
 
+# Protect existing candidate files, including completed FUSE evaluations.
+# Check before starting the potentially expensive parameter search.
+file_candidates <- file.path(
+  out_dir,
+  paste0("candidates_step_", modelStep, ".RData")
+)
+
+if (file.exists(file_candidates)) {
+  stop(
+    "Candidate file already exists: ", file_candidates,
+    "\nRefusing to overwrite existing candidate results."
+  )
+}
+
 all_results <- list()
 
 
@@ -148,5 +162,5 @@ rownames(paramSearch) <- NULL
 
 save(
   paramSearch,
-  file = file.path(out_dir, paste0("candidates_step_", modelStep, ".RData"))
+  file = file_candidates
 )
