@@ -9,9 +9,15 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 2L) {
-  stop("Usage: Rscript 02_prepare_FUSE_settings.R <config_file> <dirMain>")
+if (
+  length(args) < 2L ||
+  length(args) > 3L ||
+  (length(args) == 3L && args[3] != "--force")
+) {
+  stop("Usage: Rscript 02_prepare_FUSE_settings.R <config_file> <dirMain> [--force]")
 }
+
+force <- length(args) == 3L
 
 config_file <- normalizePath(args[1], mustWork = TRUE)
 dirMain <- normalizePath(args[2], mustWork = TRUE)
@@ -33,9 +39,6 @@ if (!dir.exists(source_settings)) {
   stop("FUSE template settings not found: ", source_settings)
 }
 
-settings_dir <- ensure_dir(paths$settings)
-decision_dir <- ensure_dir(paths$decisions)
-
 # ==============================================================================
 # Standard FUSE setting files
 # ==============================================================================
@@ -47,12 +50,6 @@ missing_files <- source_files[!file.exists(source_files)]
 
 if (length(missing_files)) {
   stop("Missing FUSE setting file(s): ", paste(basename(missing_files), collapse = ", "))
-}
-
-ok <- file.copy(source_files, paths$settings, overwrite = TRUE)
-
-if (!all(ok)) {
-  stop("Failed to copy one or more canonical FUSE setting files.")
 }
 
 # ==============================================================================
@@ -70,11 +67,7 @@ if (!file.exists(source_decision_list)) {
   stop("Missing list_decision_78.txt in FUSE template: ", source_decision_list)
 }
 
-if (!file.copy(source_decision_list, decision_list, overwrite = TRUE)) {
-  stop("Could not copy list_decision_78.txt.")
-}
-
-decision_table <- read.table(decision_list, header = TRUE, sep = ";", stringsAsFactors = FALSE, check.names = FALSE)
+decision_table <- read.table(source_decision_list, header = TRUE, sep = ";", stringsAsFactors = FALSE, check.names = FALSE)
 
 if (!"ID" %in% names(decision_table)) {
   stop("Column 'ID' missing from ", decision_list)
@@ -89,7 +82,7 @@ if (!length(zDecisions)) {
 source_decisions <- file.path(source_settings, "fuse_zDecisions")
 
 if (!dir.exists(source_decisions)) {
-  stop("Missing template zDecision folder: ", dec_dir)
+  stop("Missing template zDecision folder: ", source_decisions)
 }
 
 dec_files <- file.path(source_decisions, paste0("fuse_zDecisions_", zDecisions, ".txt"))
@@ -99,7 +92,44 @@ if (length(missing_decisions)) {
   stop("Missing zDecision file(s): ", paste(basename(missing_decisions), collapse = ", "))
 }
 
-ok <- file.copy(dec_files, paths$decisions, overwrite = TRUE)
+# ==============================================================================
+# Check existing outputs before copying any files
+# ==============================================================================
+
+destination_files <- c(
+  file.path(paths$settings, setting_files),
+  decision_list,
+  file.path(paths$decisions, basename(dec_files))
+)
+
+existing_files <- destination_files[file.exists(destination_files)]
+
+if (length(existing_files) > 0L && !force) {
+  stop(
+    "FUSE settings already exist:\n",
+    paste(existing_files, collapse = "\n"),
+    "\nUse --force to explicitly allow replacement."
+  )
+}
+
+# ==============================================================================
+# Copy validated FUSE settings
+# ==============================================================================
+
+ensure_dir(paths$settings)
+ensure_dir(paths$decisions)
+
+ok <- file.copy(source_files, paths$settings, overwrite = force)
+
+if (!all(ok)) {
+  stop("Failed to copy one or more canonical FUSE setting files.")
+}
+
+if (!file.copy(source_decision_list, decision_list, overwrite = force)) {
+  stop("Could not copy list_decision_78.txt.")
+}
+
+ok <- file.copy(dec_files, paths$decisions, overwrite = force)
 
 if (!all(ok)) {
   stop("Failed to copy one or more zDecision files.")
