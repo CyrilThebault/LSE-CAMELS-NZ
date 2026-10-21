@@ -57,9 +57,23 @@ fi
 # Workflow configuration
 # ==============================================================================
 
-TIMESTEP="$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$timestep)")"
-ZDECISION="${ZDECISION:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$zDecision)")}"
-NREFINE="${NREFINE:-$(Rscript -e "source('${CONFIG_FILE}'); cat(experiment\$nRefinementSteps)")}"
+CONFIG_VALUES="$(
+  Rscript - "$DIR_MAIN" "$CONFIG_FILE" <<'RS'
+args <- commandArgs(trailingOnly = TRUE)
+source(file.path(args[1], "scripts/functions/common.R"))
+experiment <- load_workflow_config(args[2])
+cat(
+  experiment$timestep,
+  experiment$zDecision,
+  experiment$nRefinementSteps
+)
+RS
+)"
+
+read -r TIMESTEP CONFIG_ZDECISION CONFIG_NREFINE <<< "$CONFIG_VALUES"
+
+ZDECISION="${ZDECISION:-$CONFIG_ZDECISION}"
+NREFINE="${NREFINE:-$CONFIG_NREFINE}"
 
 EXPERIMENT_ROOT="$DIR_MAIN/experiments/$TIMESTEP/$EXPERIMENT"
 
