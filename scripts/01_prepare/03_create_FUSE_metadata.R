@@ -10,9 +10,15 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 2L) {
-  stop("Usage: Rscript 03_create_FUSE_metadata.R <config_file> <dirMain>")
+if (
+  length(args) < 2L ||
+  length(args) > 3L ||
+  (length(args) == 3L && args[3] != "--force")
+) {
+  stop("Usage: Rscript 03_create_FUSE_metadata.R <config_file> <dirMain> [--force]")
 }
+
+force <- length(args) == 3L
 
 config_file <- normalizePath(args[1], mustWork = TRUE)
 dirMain <- normalizePath(args[2], mustWork = TRUE)
@@ -26,12 +32,20 @@ dirSettings <- paths$settings
 dirDecisions <- paths$decisions
 dirUseful <- paths$useful
 
-ensure_dir(dirUseful)
-
 fileConstraints <- file.path(dirSettings, "fuse_zConstraints_snow.txt")
 fileNumerix <- file.path(dirSettings, "fuse_zNumerix.txt")
 fileDecisionList <- file.path(dirSettings, "list_decision_78.txt")
 fileOutput <- file.path(dirUseful, "fuse_settings_files.RData")
+
+# Protect existing FUSE metadata against accidental replacement.
+if (file.exists(fileOutput) && !force) {
+  stop(
+    "FUSE metadata already exists: ", fileOutput,
+    "\nUse --force to explicitly allow replacement."
+  )
+}
+
+ensure_dir(dirUseful)
 
 
 # ==============================================================================
