@@ -13,9 +13,15 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 3L) {
-  stop("Usage: Rscript 01_prepare_CAMELS_NZ.R <basinID|ALL> <config_file> <dirMain>")
+if (
+  length(args) < 3L ||
+  length(args) > 4L ||
+  (length(args) == 4L && args[4] != "--force")
+) {
+  stop("Usage: Rscript 01_prepare_CAMELS_NZ.R <basinID|ALL> <config_file> <dirMain> [--force]")
 }
+
+force <- length(args) == 4L
 
 basin_arg <- args[1]
 config_file <- normalizePath(args[2], mustWork = TRUE)
@@ -44,6 +50,29 @@ basins <- if (toupper(basin_arg) == "ALL") {
   read_basin_ids(basin_file)
 } else {
   as.character(basin_arg)
+}
+
+
+# ==============================================================================
+# Protect existing forcing files
+# ==============================================================================
+
+input_files <- file.path(
+  paths$forcings, basins, paste0(basins, "_input.nc")
+)
+elev_files <- file.path(
+  paths$forcings, basins, paste0(basins, "_elev_bands.nc")
+)
+
+existing_files <- c(input_files, elev_files)
+existing_files <- existing_files[file.exists(existing_files)]
+
+if (length(existing_files) > 0L && !force) {
+  stop(
+    "Prepared CAMELS-NZ files already exist:\n",
+    paste(existing_files, collapse = "\n"),
+    "\nUse --force to explicitly allow replacement."
+  )
 }
 
 
