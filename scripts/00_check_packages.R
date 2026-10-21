@@ -4,7 +4,7 @@
 # the more computationally expensive preparation and emulator steps.
 pkgs <- c(
   "ncdf4", "hydroEvents", "lhs", "ranger", "xgboost", "Matrix", "GA",
-  "parallel", "sf", "ggplot2", "viridisLite"
+  "parallel", "sf", "ggplot2", "viridisLite", "scales"
 )
 
 status <- vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)
