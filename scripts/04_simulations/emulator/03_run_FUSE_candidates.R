@@ -46,6 +46,28 @@ file_candidates <- file.path(out_dir, paste0("candidates_step_", modelStep, ".RD
 
 paramSearch <- load_rdata_single(file_candidates)
 
+# Refuse to reevaluate candidates that already contain FUSE results.
+# These fields are added by this script, not by the parameter search.
+evaluation_columns <- c(
+  "run_ok", "run_reason", "runTime_sec",
+  "KGEc", "KGEe", "NKGEc"
+)
+
+existing_evaluation <- intersect(
+  evaluation_columns,
+  names(paramSearch)
+)
+
+if (length(existing_evaluation) > 0L) {
+  stop(
+    "Candidate file already contains FUSE evaluation fields: ",
+    file_candidates,
+    "\nExisting fields: ",
+    paste(existing_evaluation, collapse = ", "),
+    "\nRefusing to reevaluate existing candidate results."
+  )
+}
+
 
 # ==============================================================================
 # FUSE workspace and observed streamflow
