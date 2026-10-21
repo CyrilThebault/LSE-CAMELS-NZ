@@ -171,6 +171,23 @@ model_dir <- ensure_dir(
 # Train emulators
 # ==============================================================================
 
+# Refuse to overwrite models from an existing training step.
+# Check all selected emulators before starting any training.
+model_files <- file.path(
+  model_dir,
+  paste0("emulator_step_", iStep, "_", experiment$emulators, ".RData")
+)
+
+existing_models <- model_files[file.exists(model_files)]
+
+if (length(existing_models) > 0L) {
+  stop(
+    "Emulator model output(s) already exist:\n",
+    paste(existing_models, collapse = "\n"),
+    "\nRefusing to overwrite existing models."
+  )
+}
+
 for (ml in experiment$emulators) {
   
   message("")
