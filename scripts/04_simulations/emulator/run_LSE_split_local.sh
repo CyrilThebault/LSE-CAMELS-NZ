@@ -29,8 +29,7 @@ NCORES="${NCORES:-4}"
 # Temporary workspace
 # ==============================================================================
 
-TMP_BASE="${TMPDIR:-/tmp}/lse"
-mkdir -p "$TMP_BASE"
+TMP_BASE=$(mktemp -d "${TMPDIR:-/tmp}/lse.XXXXXXXX")
 
 
 # ==============================================================================
