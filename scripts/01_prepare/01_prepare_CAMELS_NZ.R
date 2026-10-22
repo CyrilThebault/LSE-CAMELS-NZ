@@ -46,9 +46,17 @@ if (!file.exists(basin_file)) {
   stop("Create config/basins.txt from config/basins.txt.example")
 }
 
+selected_basins <- read_basin_ids(basin_file)
+
 basins <- if (toupper(basin_arg) == "ALL") {
-  read_basin_ids(basin_file)
+  selected_basins
 } else {
+  if (!(basin_arg %in% selected_basins)) {
+    stop(
+      "Basin ", basin_arg,
+      " is not included in config/basins.txt"
+    )
+  }
   as.character(basin_arg)
 }
 
