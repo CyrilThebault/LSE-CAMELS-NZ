@@ -41,6 +41,12 @@ export OMP_THREAD_LIMIT=1
 # ==============================================================================
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN to the LSE-CAMELS-NZ repository root}"
+CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE to the experiment configuration file}"
+
+[[ -f "$CONFIG_FILE" ]] || {
+  echo "Missing configuration file: $CONFIG_FILE" >&2
+  exit 1
+}
 NCORES="${NCORES:-${SLURM_CPUS_PER_TASK:-1}}"
 
 SCRIPT="$DIR_MAIN/scripts/01_prepare/floods/02_plot_observed_flood_catalogue.R"
@@ -59,9 +65,10 @@ OUT_DIR="${OUT_DIR:-$DEFAULT_OUT_DIR}"
 
 [[ -f "$EVENTS_FILE" ]] || { echo "Missing events file: $EVENTS_FILE" >&2; exit 1; }
 [[ -f "$SCRIPT" ]] || { echo "Missing script: $SCRIPT" >&2; exit 1; }
-[[ -f "$BASIN_FILE" ]] || { echo "Missing basin file: $BASIN_FILE" >&2; exit 1; }
+if [[ -z "${BASIN_IDS:-}" ]]; then
+  [[ -f "$BASIN_FILE" ]] || { echo "Missing basin file: $BASIN_FILE" >&2; exit 1; }
+fi
 
-mkdir -p "$OUT_DIR"
 
 if [[ -n "${BASIN_IDS:-}" ]]; then
   BASINS="$(printf '%s\n' "$BASIN_IDS" | tr ', ' '\n\n' | awk 'NF')"
@@ -70,6 +77,28 @@ else
 fi
 
 [[ -n "$BASINS" ]] || { echo "No basin IDs found." >&2; exit 1; }
+
+# Check all destination PDFs before starting parallel processing.
+existing_pdfs=()
+
+while IFS= read -r ID; do
+  [[ -n "$ID" ]] || continue
+
+  pdf_file="$OUT_DIR/${ID}${PDF_SUFFIX}"
+
+  if [[ -e "$pdf_file" || -L "$pdf_file" ]]; then
+    existing_pdfs+=("$pdf_file")
+  fi
+done <<< "$BASINS"
+
+if (( ${#existing_pdfs[@]} > 0 )); then
+  printf 'Existing flood review PDF(s):\n' >&2
+  printf '%s\n' "${existing_pdfs[@]}" >&2
+  printf 'No PDFs were generated.\n' >&2
+  exit 1
+fi
+
+mkdir -p "$OUT_DIR"
 
 # ==============================================================================
 # Review observed flood catalogue
@@ -82,16 +111,18 @@ printf '%s\n' "$BASINS" |
     OUT_DIR="$3"
     SCRIPT="$4"
     EVENTS_FILE="$5"
+    CONFIG_FILE="$6"
 
     echo "[review] basin $ID"
 
     Rscript \
       "$SCRIPT" \
+      "$CONFIG_FILE" \
       "$DIR_MAIN" \
       "$EVENTS_FILE" \
       "$ID" \
       "$OUT_DIR/${ID}${PDF_SUFFIX}"
-  ' _ {} "$DIR_MAIN" "$OUT_DIR" "$SCRIPT" "$EVENTS_FILE"
+  ' _ {} "$DIR_MAIN" "$OUT_DIR" "$SCRIPT" "$EVENTS_FILE" "$CONFIG_FILE"
 
 echo "Observed flood reviews written to:"
 echo "  $OUT_DIR"

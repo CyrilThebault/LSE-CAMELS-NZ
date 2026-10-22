@@ -1,6 +1,5 @@
 #!/usr/bin/env Rscript
 
-library(ncdf4)
 library(ggplot2)
 library(grid)
 library(sf)
@@ -12,29 +11,38 @@ library(sf)
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 4L) {
+force <- length(args) > 0L && tail(args, 1L) == "--force"
+if (force) args <- head(args, -1L)
+
+if (length(args) != 5L) {
   stop(
     paste(
       "Usage:",
       "Rscript 02_plot_observed_flood_catalogue.R",
-      "<dirMain> <events.csv> <ID> <output.pdf>"
+      "<config_file> <dirMain> <events.csv> <ID> <output.pdf> [--force]"
     )
   )
 }
 
-dirMain <- normalizePath(args[1], mustWork = TRUE)
-fileEvents <- normalizePath(args[2], mustWork = TRUE)
-ID <- as.character(args[3])
-fileOut <- args[4]
+config_file <- normalizePath(args[1], mustWork = TRUE)
+dirMain <- normalizePath(args[2], mustWork = TRUE)
+fileEvents <- normalizePath(args[3], mustWork = TRUE)
+ID <- as.character(args[4])
+fileOut <- args[5]
+
+if (file.exists(fileOut) && !force) {
+  stop(
+    "Flood review PDF already exists: ", fileOut,
+    "\nUse --force to explicitly allow replacement."
+  )
+}
 
 source(file.path(dirMain, "scripts", "functions", "common.R"))
+source(file.path(dirMain, "scripts", "functions", "floods.R"))
 
-experiment <- load_workflow_config(
-  file.path(dirMain, "config", "experiment_hourly.R")
-)
+experiment <- load_workflow_config(config_file)
 
 stopifnot(
-  identical(experiment$timestep, "hourly"),
   is.character(experiment$timezone),
   length(experiment$timezone) == 1L,
   !is.na(experiment$timezone),
@@ -318,16 +326,16 @@ fileExcluded <- file.path(
   "observed_flood_excluded.csv"
 )
 
-fileNC <- file.path(
-  dirMain,
-  "data",
-  "forcings",
-  "hourly",
-  ID,
-  paste0(
-    ID,
-    "_input.nc"
-  )
+fileFlow <- file.path(
+  experiment$paths$camels_nz,
+  "CAMELS_NZ_hourly_Streamflow",
+  paste0("flow_station_id_", ID, ".csv")
+)
+
+fileMetadata <- file.path(
+  experiment$paths$camels_nz,
+  "CAMELS_NZ_Catchment_Atrributes",
+  "1.CAMELS_NZ_Catchment_information.csv"
 )
 
 fileStations <- file.path(
@@ -352,7 +360,8 @@ filesRequired <- c(
   fileEvents,
   fileCatalogue,
   fileExcluded,
-  fileNC,
+  fileFlow,
+  fileMetadata,
   fileStations,
   fileNZ,
   fileCatchments
@@ -570,26 +579,17 @@ if ("n_q99_candidates" %in% names(ev)) {
 # Hourly observed discharge
 # ==============================================================================
 
-nc <- nc_open(
-  fileNC
+flood_metadata <- read.csv(
+  fileMetadata,
+  fileEncoding = "UTF-8-BOM",
+  stringsAsFactors = FALSE,
+  check.names = FALSE
 )
 
-q <- as.numeric(
-  ncvar_get(
-    nc,
-    "q_obs"
-  )
-)
+dat <- read_camels_nz_hourly_qobs(ID, experiment, flood_metadata)
 
-time <- nc_time_to_posixct(
-  nc$dim$time$vals,
-  nc$dim$time$units,
-  experiment
-)
-
-nc_close(
-  nc
-)
+q <- dat$q
+time <- dat$time
 
 hydro <- data.frame(
   time = time,
