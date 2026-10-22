@@ -53,10 +53,39 @@ suppressPackageStartupMessages(library(ncdf4))
 basins <- read_basin_ids(file.path(dirMain, "config", "basins.txt"))
 attributes <- load_rdata_single(file.path(paths$useful, "attributes.RData"))
 
+# Attributes must contain exactly the configured basins, in the same order.
+if (!"ID" %in% names(attributes)) {
+  stop("ID column missing from attributes.RData")
+}
+
+attribute_ids <- as.character(attributes$ID)
+
+if (!identical(attribute_ids, as.character(basins))) {
+  missing <- setdiff(basins, attribute_ids)
+  extra <- setdiff(attribute_ids, basins)
+
+  stop(
+    "attributes.RData does not match config/basins.txt.",
+    "\nMissing basins: ",
+    if (length(missing)) paste(missing, collapse = ", ") else "none",
+    "\nExtra basins: ",
+    if (length(extra)) paste(extra, collapse = ", ") else "none",
+    "\nThe basin order must also match."
+  )
+}
+
 
 # ==============================================================================
 # Basin-level preparation checks
 # ==============================================================================
+
+# FUSE forcing timestamps are stored at the midpoint of each interval.
+# The expected axis is derived entirely from the experiment configuration.
+expected_time <- seq.POSIXt(
+  from = experiment$simulation_start,
+  to = experiment$simulation_end,
+  by = time_info$seconds_per_timestep
+) + time_info$seconds_per_timestep / 2
 
 rows <- lapply(basins, function(id) {
   
@@ -67,6 +96,7 @@ rows <- lapply(basins, function(id) {
   ok_input <- file.exists(input)
   
   time_unit_valid <- NA
+  time_axis_valid <- NA
   n_timesteps <- NA_integer_
   q_missing <- NA_real_
   forcing_na <- NA
@@ -81,6 +111,21 @@ rows <- lapply(basins, function(id) {
     netcdf_time_unit <- sub(" since.*$", "", time_units)
     
     time_unit_valid <- identical(netcdf_time_unit, time_info$time_units)
+
+    time_axis_valid <- FALSE
+
+    if (
+      isTRUE(time_unit_valid) &&
+      length(t) == length(expected_time) &&
+      all(is.finite(t))
+    ) {
+      actual_time <- nc_time_to_posixct(t, time_units, experiment)
+
+      time_axis_valid <- all(is.finite(as.numeric(actual_time))) &&
+        all(
+          abs(as.numeric(actual_time) - as.numeric(expected_time)) < 1e-4
+        )
+    }
     
     q <- ncvar_get(nc, "q_obs")
     
@@ -101,9 +146,12 @@ rows <- lapply(basins, function(id) {
     attributes = has_att,
     n_timesteps = n_timesteps,
     time_unit_valid = time_unit_valid,
+    time_axis_valid = time_axis_valid,
     qobs_missing_pct = q_missing,
     forcing_has_NA = forcing_na,
-    valid = ok_input && file.exists(elev) && has_att && isTRUE(time_unit_valid) && isFALSE(forcing_na)
+    valid = ok_input && file.exists(elev) && has_att &&
+      isTRUE(time_unit_valid) && isTRUE(time_axis_valid) &&
+      isFALSE(forcing_na)
   )
 })
 
