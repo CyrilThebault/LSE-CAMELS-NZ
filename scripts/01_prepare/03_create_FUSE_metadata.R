@@ -447,17 +447,20 @@ cat("Configurations : ", length(fuse_settings_files$decisions), "\n", sep = "")
 
 str(fuse_settings_files, max.level = 2)
 
-# Display configuration 126 as a simple diagnostic when it is available.
-if ("zDecision_126" %in% names(fuse_settings_files$configs_to_params)) {
-  
-  cat("\nConfiguration 126:\n")
-  print(fuse_settings_files$configs_to_params$zDecision_126)
-  
-  cat("\nParameter mask for configuration 126:\n")
+# Display one available configuration as a diagnostic.
+if (length(fuse_settings_files$configs_to_params) > 0L) {
+
+  example_name <- names(fuse_settings_files$configs_to_params)[1L]
+  example_config <- fuse_settings_files$configs_to_params[[example_name]]
+
+  cat("\nConfiguration ", example_name, ":\n", sep = "")
+  print(example_config)
+
+  cat("\nParameter mask for ", example_name, ":\n", sep = "")
   print(
     data.frame(
       parameter = ParameterNames,
-      active = fuse_settings_files$configs_to_params$zDecision_126$params
+      active = example_config$params
     )
   )
 }
