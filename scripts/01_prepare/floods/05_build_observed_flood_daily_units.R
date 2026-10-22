@@ -1,21 +1,31 @@
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) > 1L || (length(args) == 1L && args[1] != "--force")) {
-  stop("Usage: Rscript 05_build_observed_flood_daily_units.R [--force]")
+force <- length(args) > 0L && tail(args, 1L) == "--force"
+if (force) args <- head(args, -1L)
+
+if (length(args) != 2L) {
+  stop(
+    "Usage: Rscript 05_build_observed_flood_daily_units.R ",
+    "<config_file> <dirMain> [--force]"
+  )
 }
 
-force <- length(args) == 1L
+config_file <- normalizePath(args[1], mustWork = TRUE)
+dirMain <- normalizePath(args[2], mustWork = TRUE)
 
-source("scripts/functions/common.R")
+source(file.path(dirMain, "scripts", "functions", "common.R"))
 
-exp <- load_workflow_config("config/experiment_hourly.R")
+exp <- load_workflow_config(config_file)
 tz <- exp$timezone
 
-input <- "data/flood/qc/observed_flood_catalogue_reviewed.csv"
+input <- file.path(
+  dirMain, "data", "flood", "qc",
+  "observed_flood_catalogue_reviewed.csv"
+)
 
 output_dir <- Sys.getenv(
   "FLOOD_DAILY_OUTPUT_DIR",
-  unset = file.path("data", "flood", "qc")
+  unset = file.path(dirMain, "data", "flood", "qc")
 )
 
 out_units <- file.path(output_dir, "observed_flood_daily_units.csv")
@@ -228,15 +238,8 @@ stopifnot(
   all(units$hourly_coverage <= 1 + 1e-10)
 )
 
-# Expected values from our previous diagnostics
-stopifnot(
-  n == 34852L,
-  g == 31347L,
-  sum(units$n_events == 1L) == 28361L,
-  sum(units$n_events > 1L) == 2986L,
-  sum(units$n_events[units$n_events > 1L]) == 6491L,
-  sum(units$n_days == 1L) == 96L
-)
+# Dataset-dependent counts are diagnostics, not validation criteria.
+# The structural invariants above apply to any selection of basins.
 
 # ==================================================
 # 7. Report
@@ -251,16 +254,27 @@ cat("Basins:", length(unique(units$ID)), "\n")
 cat("\n===== UNIT COMPOSITION =====\n")
 print(table(units$n_events))
 
+cat("Single-event units:",
+    sum(units$n_events == 1L), "\n")
+cat("Multi-event units:",
+    sum(units$n_events > 1L), "\n")
+cat("Events in multi-event units:",
+    sum(units$n_events[units$n_events > 1L]), "\n")
+cat("Single-day units:",
+    sum(units$n_days == 1L), "\n")
+
 cat("\n===== DAILY WINDOW COVERAGE =====\n")
 print(quantile(
   100 * units$hourly_coverage,
   probs = c(0, 0.1, 0.25, 0.5, 0.75, 0.9, 1)
 ))
 
-cat("\n===== BASIN 33301 =====\n")
+example_basin <- as.character(units$ID[1L])
+
+cat("\n===== EXAMPLE BASIN:", example_basin, "=====\n")
 
 example <- units[
-  units$ID == "33301",
+  units$ID == example_basin,
   ,
   drop = FALSE
 ]
