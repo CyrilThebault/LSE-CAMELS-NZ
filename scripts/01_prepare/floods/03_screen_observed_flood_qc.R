@@ -1,4 +1,3 @@
-library(ncdf4)
 library(parallel)
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -6,23 +5,22 @@ args <- commandArgs(trailingOnly = TRUE)
 force <- length(args) > 0L && tail(args, 1L) == "--force"
 if (force) args <- head(args, -1L)
 
-if (length(args) > 1L) {
-  stop("Usage: Rscript 03_screen_observed_flood_qc.R [dirMain] [--force]")
+if (length(args) != 2L) {
+  stop(
+    "Usage: Rscript 03_screen_observed_flood_qc.R ",
+    "<config_file> <dirMain> [--force]"
+  )
 }
-dirMain <- if (length(args)) {
-  normalizePath(args[1], mustWork = TRUE)
-} else {
-  normalizePath(".", mustWork = TRUE)
-}
+
+config_file <- normalizePath(args[1], mustWork = TRUE)
+dirMain <- normalizePath(args[2], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts", "functions", "common.R"))
+source(file.path(dirMain, "scripts", "functions", "floods.R"))
 
-experiment <- load_workflow_config(
-  file.path(dirMain, "config", "experiment_hourly.R")
-)
+experiment <- load_workflow_config(config_file)
 
 stopifnot(
-  identical(experiment$timestep, "hourly"),
   is.character(experiment$timezone),
   length(experiment$timezone) == 1L,
   !is.na(experiment$timezone),
@@ -534,24 +532,25 @@ ev$peak_over_basin_q90 <- ev$peak_q_obs / ev$peak_q_obs_q90
 # Hourly Qobs diagnostics
 # ==============================================================================
 
+fileMetadata <- file.path(
+  experiment$paths$camels_nz,
+  "CAMELS_NZ_Catchment_Atrributes",
+  "1.CAMELS_NZ_Catchment_information.csv"
+)
+
+flood_metadata <- read.csv(
+  fileMetadata,
+  fileEncoding = "UTF-8-BOM",
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
 process_basin <- function(ID) {
   ii <- which(ev$ID == ID)
 
-  fileNC <- file.path(
-    dirMain, "data", "forcings", "hourly", ID, paste0(ID, "_input.nc")
-  )
-  if (!file.exists(fileNC)) {
-    stop("Missing forcing file: ", fileNC)
-  }
-
-  nc <- nc_open(fileNC)
-  q <- as.numeric(ncvar_get(nc, "q_obs"))
-  time <- nc_time_to_posixct(
-    nc$dim$time$vals,
-    nc$dim$time$units,
-    experiment
-  )
-  nc_close(nc)
+  dat <- read_camels_nz_hourly_qobs(ID, experiment, flood_metadata)
+  q <- dat$q
+  time <- dat$time
 
   stopifnot(length(q) == length(time))
   time_num <- as.numeric(time)
