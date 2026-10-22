@@ -21,7 +21,6 @@
 #     /path/to/LSE-CAMELS-NZ [ncores]
 # ==============================================================================
 
-library(ncdf4)
 library(hydroEvents)
 
 
@@ -36,16 +35,17 @@ if (force) {
   args <- head(args, -1L)
 }
 
-if (length(args) < 1L || length(args) > 2L) {
+if (length(args) < 2L || length(args) > 3L) {
   stop(
-    "Usage: Rscript 01_build_observed_flood_catalogue.R <dirMain> [ncores] [--force]"
+    "Usage: Rscript 01_build_observed_flood_catalogue.R <config_file> <dirMain> [ncores] [--force]"
   )
 }
 
-dirMain <- normalizePath(args[1], mustWork = TRUE)
+config_file <- normalizePath(args[1], mustWork = TRUE)
+dirMain <- normalizePath(args[2], mustWork = TRUE)
 
-ncores <- if (length(args) == 2L) {
-  suppressWarnings(as.integer(args[2]))
+ncores <- if (length(args) == 3L) {
+  suppressWarnings(as.integer(args[3]))
 } else {
   1L
 }
@@ -80,13 +80,22 @@ dir.create(dirDiag, recursive = TRUE, showWarnings = FALSE)
 
 source(file.path(dirMain, "scripts/functions/basins.R"))
 source(file.path(dirMain, "scripts/functions/common.R"))
+source(file.path(dirMain, "scripts/functions/floods.R"))
 
-experiment <- load_workflow_config(
-  file.path(dirMain, "config", "experiment_hourly.R")
+experiment <- load_workflow_config(config_file)
+
+flood_metadata <- read.csv(
+  file.path(
+    experiment$paths$camels_nz,
+    "CAMELS_NZ_Catchment_Atrributes",
+    "1.CAMELS_NZ_Catchment_information.csv"
+  ),
+  fileEncoding = "UTF-8-BOM",
+  stringsAsFactors = FALSE,
+  check.names = FALSE
 )
 
 stopifnot(
-  identical(experiment$timestep, "hourly"),
   is.character(experiment$timezone),
   length(experiment$timezone) == 1L,
   !is.na(experiment$timezone),
@@ -157,32 +166,14 @@ get_blocks <- function(ok) {
 
 
 read_basin <- function(ID) {
-  f <- file.path(
-    dirMain,
-    "data", "forcings", "hourly", ID,
-    paste0(ID, "_input.nc")
-  )
 
-  if (!file.exists(f)) {
-    stop("Missing hourly forcing file: ", f)
-  }
-
-  nc <- nc_open(f)
-  on.exit(nc_close(nc))
-
-  q <- as.numeric(ncvar_get(nc, "q_obs"))
-
-  time <- nc_time_to_posixct(
-    nc$dim$time$vals,
-    nc$dim$time$units,
-    experiment
-  )
+  dat <- read_camels_nz_hourly_qobs(ID, experiment, flood_metadata)
 
   list(
-    q = q,
-    time = time,
+    q = dat$q,
+    time = dat$time,
     q99 = unname(
-      quantile(q, Qprob, na.rm = TRUE, type = 7)
+      quantile(dat$q, Qprob, na.rm = TRUE, type = 7)
     )
   )
 }

@@ -14,6 +14,12 @@ export OMP_THREAD_LIMIT=1
 # ==============================================================================
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN to the LSE-CAMELS-NZ repository root}"
+CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE to the experiment configuration file}"
+
+[[ -f "$CONFIG_FILE" ]] || {
+  echo "Missing configuration file: $CONFIG_FILE" >&2
+  exit 1
+}
 NCORES="${NCORES:-4}"
 
 
@@ -23,5 +29,6 @@ NCORES="${NCORES:-4}"
 
 Rscript \
   "$DIR_MAIN/scripts/01_prepare/floods/01_build_observed_flood_catalogue.R" \
+  "$CONFIG_FILE" \
   "$DIR_MAIN" \
   "$NCORES"
