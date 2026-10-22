@@ -24,6 +24,7 @@ config_file <- normalizePath(args[1], mustWork = TRUE)
 dirMain <- normalizePath(args[2], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts/functions/common.R"))
+source(file.path(dirMain, "scripts/functions/basins.R"))
 
 experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
@@ -138,6 +139,28 @@ for (nm in names(tabs)) {
 if (anyDuplicated(attributes$ID)) {
   stop("Duplicated IDs in final attributes")
 }
+
+# Keep exactly the basins selected for this experiment.
+selected_basins <- read_basin_ids(
+  file.path(dirMain, "config", "basins.txt")
+)
+
+rows <- match(selected_basins, as.character(attributes$ID))
+
+if (anyNA(rows)) {
+  stop(
+    "Selected basin(s) missing from CAMELS-NZ attributes: ",
+    paste(selected_basins[is.na(rows)], collapse = ", ")
+  )
+}
+
+attributes <- attributes[rows, , drop = FALSE]
+rownames(attributes) <- NULL
+
+stopifnot(
+  identical(as.character(attributes$ID), as.character(selected_basins)),
+  nrow(attributes) == length(selected_basins)
+)
 
 ensure_dir(paths$useful)
 
