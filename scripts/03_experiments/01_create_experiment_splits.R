@@ -40,6 +40,7 @@ set.seed(experiment$seed)
 
 make_fold <- function(base, name, train, test, meta = list()) {
   
+  ensure_dir(base)
   d <- ensure_dir(file.path(base, name))
   
   write_basin_ids(train, file.path(d, "train_basins.txt"))
@@ -75,7 +76,6 @@ if (dir.exists(base) &&
   )
 }
 
-base <- ensure_dir(base)
 
 
 # ==============================================================================
@@ -151,7 +151,7 @@ if (mode == "allseen") {
   
 } else if (mode == "cluster") {
 
-  cluster_col <- if (length(args) >= 4L) args[4] else "hydro_cluster"
+  cluster_col <- if (length(args) >= 4L) args[4] else "Climate Zone"
 
   attributes <- load_rdata_single(
     file.path(paths$useful, "attributes.RData")

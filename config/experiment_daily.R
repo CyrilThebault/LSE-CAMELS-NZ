@@ -38,6 +38,10 @@ experiment <- list(
   nRefinementSteps = 2L,
 
   emulators = c("RF", "GBMv01", "GBMv02"),
+  split_modes    = c("allseen", "loo", "kfold", "cluster"),
+  kfold_K        = 5L,
+  cluster_column = "Climate Zone",
+
   seed = 1234L,
 
   ga_population  = 100L,
