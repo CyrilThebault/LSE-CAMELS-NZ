@@ -27,10 +27,39 @@ config_file <- normalizePath(args[4], mustWork = TRUE)
 dirMain <- normalizePath(args[5], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts/functions/common.R"))
+source(file.path(dirMain, "scripts/functions/basins.R"))
 source(file.path(dirMain, "scripts/functions/fuse.R"))
 
 experiment <- load_workflow_config(config_file)
 paths <- project_paths(dirMain, experiment)
+
+# Check that the selected basin belongs to this experiment.
+selected_basins <- as.character(
+  read_basin_ids(file.path(dirMain, "config", "basins.txt"))
+)
+
+if (!basinID %in% selected_basins) {
+  stop("Basin ", basinID, " is not listed in config/basins.txt")
+}
+
+# An explicit zDecision must belong to the configured model structures.
+configured_decisions <- as.character(experiment$zDecision)
+
+if (
+  !length(configured_decisions) ||
+  anyNA(configured_decisions) ||
+  any(!nzchar(trimws(configured_decisions)))
+) {
+  stop("Invalid experiment$zDecision configuration")
+}
+
+if (!zDecision %in% configured_decisions) {
+  stop(
+    "zDecision ", zDecision,
+    " is not allowed by the experiment configuration. Allowed: ",
+    paste(configured_decisions, collapse = ", ")
+  )
+}
 
 # Protect the immutable initial ensemble against accidental replacement.
 iter0_file <- file.path(
@@ -132,9 +161,34 @@ iter0 <- list(
   seed = experiment$seed
 )
 
-outdir <- ensure_dir(file.path(paths$iter0, paste0("zDecision_", zDecision), basinID))
+outdir <- ensure_dir(dirname(iter0_file))
 
-save(
-  iter0,
-  file = file.path(outdir, paste0("iter0_", basinID, "_zDec_", zDecision, ".RData"))
+# Write and validate the complete result before making it visible.
+temporary_file <- tempfile(
+  pattern = ".iter0_",
+  tmpdir = outdir,
+  fileext = ".RData"
+)
+
+tryCatch(
+  {
+    save(iter0, file = temporary_file)
+
+    # Ensure the newly written RData file can be loaded.
+    invisible(load_rdata_single(temporary_file))
+
+    # Recheck immediately before finalizing the result.
+    if (file.exists(iter0_file) && !force) {
+      stop("Iter0 result already exists: ", iter0_file)
+    }
+
+    if (!file.rename(temporary_file, iter0_file)) {
+      stop("Could not finalize iter0 result: ", iter0_file)
+    }
+  },
+  finally = {
+    if (file.exists(temporary_file)) {
+      unlink(temporary_file)
+    }
+  }
 )
