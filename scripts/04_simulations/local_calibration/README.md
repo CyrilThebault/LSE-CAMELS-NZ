@@ -3,6 +3,23 @@
 `01_run_local_calibration.R` calibrates one basin with FUSE SCE
 and archives the hydrograph simulated using the optimal parameters.
 
+## Prerequisites and independence
+
+Local FUSE calibration is an independent simulation branch.
+
+It requires the prepared FUSE inputs for the selected basin and the
+fixed experiment configuration, but does not depend on:
+
+- The initial `iter0` database, which is used only by the emulator workflow.
+- Emulator training, refinement, or candidate selection.
+- Spatial train/test experiment splits.
+
+Each basin is calibrated directly with FUSE SCE. The optimum is then
+reproduced with FUSE OPT and archived for subsequent evaluation.
+
+Local calibration and emulator simulations can therefore be executed
+independently after their shared input preparation.
+
 ## Usage
 
 Rscript scripts/04_simulations/local_calibration/01_run_local_calibration.R \
