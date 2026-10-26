@@ -113,6 +113,21 @@ echo
 # Submit one Slurm job per split
 # ==============================================================================
 
+echo "Validating experiment splits before submission..."
+
+VALIDATOR="$DIR_MAIN/scripts/03_experiments/02_validate_experiment_splits.R"
+
+if [ ! -f "$VALIDATOR" ]; then
+  echo "Experiment split validator does not exist:"
+  echo "  $VALIDATOR"
+  exit 1
+fi
+
+Rscript "$VALIDATOR" "$EXPERIMENT" "$CONFIG_FILE" "$DIR_MAIN"
+
+echo "Experiment splits validated successfully."
+echo
+
 for EXPERIMENT_DIR in "${splits[@]}"; do
 
   split_name="$(basename "$EXPERIMENT_DIR")"

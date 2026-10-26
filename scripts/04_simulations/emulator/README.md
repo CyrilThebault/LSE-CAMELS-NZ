@@ -83,6 +83,15 @@ bash scripts/04_simulations/emulator/submit_LSE_experiment_hpc_fir.sh \
 Both HPC submission scripts discover split directories containing
 `train_basins.txt` and `test_basins.txt` and submit one Slurm job per split.
 
+Before submitting any job, both scripts run
+`scripts/03_experiments/02_validate_experiment_splits.R` for the selected
+experiment mode (`allseen`, `loo`, `kfold` or `cluster`). This read-only
+validation checks basin coverage, train/test consistency and the
+mode-specific partition rules. If validation fails, no jobs are submitted.
+
+In particular, incomplete LOO experiments are rejected even if their
+existing fold directories contain valid train/test files.
+
 `ZDECISION` and `NREFINE` default to the configuration values and may
 be overridden using environment variables. The local launcher also
 accepts `NCORES`.
