@@ -67,6 +67,7 @@ if (check_only && force) {
 }
 
 source(file.path(dirMain, "scripts/functions/common.R"))
+source(file.path(dirMain, "scripts/functions/basins.R"))
 
 experiment <- load_workflow_config(config_file)
 
@@ -259,11 +260,7 @@ if (has_emulator) {
     stop("Missing test basin list: ", test_file)
   }
 
-  test_ids <- scan(
-    test_file,
-    what = character(),
-    quiet = TRUE
-  )
+  test_ids <- read_basin_ids(test_file)
 
   stopifnot(
     length(test_ids) > 0L,
@@ -406,6 +403,20 @@ for (hydro_dir in sort(selected)) {
         source_meta$emulator
       } else {
         source_meta$method
+      }
+
+      # Never silently reuse evaluations with an older or unknown
+      # temporal convention. Existing files remain untouched.
+      if (!identical(
+        saved$metric_period_rule,
+        "complete_calendar_days_v1"
+      )) {
+        stop(
+          "Existing evaluation uses a legacy or unknown ",
+          "temporal convention: ", out_dir,
+          "\nExisting results preserved. ",
+          "Review before using --force."
+        )
       }
 
       consistent <- (

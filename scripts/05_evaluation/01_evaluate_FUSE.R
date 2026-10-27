@@ -186,7 +186,26 @@ qobs_native <- read_qobs(
   experiment
 )
 
+# Evaluation-only calendar convention.
+# Historical FUSE periods and experiment configurations are unchanged.
+metric_period_rule <- "complete_calendar_days_v1"
+
 periods <- metric_periods_from_config(experiment)
+
+for (period_name in names(periods)) {
+
+  last_day <- format(
+    periods[[period_name]]$tf,
+    "%Y-%m-%d",
+    tz = experiment$timezone
+  )
+
+  periods[[period_name]]$tf <- as.POSIXct(
+    paste(last_day, "23:59:59"),
+    format = "%Y-%m-%d %H:%M:%S",
+    tz = experiment$timezone
+  )
+}
 
 # Evaluate flood events independently in calibration and evaluation periods.
 evaluate_flood_periods <- function(evaluator) {
@@ -366,6 +385,8 @@ evaluation_metadata <- list(
   experiment_dir = meta$experiment_dir,
   config_file = meta$config_file,
   timestep = experiment$timestep,
+  metric_period_rule = metric_period_rule,
+  metric_periods = periods,
   basinID = basinID,
   zDecision = meta$zDecision,
   method_type = method_type,

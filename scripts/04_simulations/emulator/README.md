@@ -144,9 +144,9 @@ and candidate evaluation.
 
 Archived simulations are evaluated using:
 
-```bash
+```text
 Rscript scripts/05_evaluation/02_evaluate_experiment.R \
-  <experiment_dir> <config_file> <dirMain>
+  EXPERIMENT_DIR CONFIG_FILE DIR_MAIN
 ```
 
 The evaluator never runs FUSE.
