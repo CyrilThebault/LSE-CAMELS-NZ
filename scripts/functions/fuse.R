@@ -40,6 +40,30 @@ prepare_fuse_workspace <- function(dirMain, work_dir, basinID, zDecision, experi
   
   paths <- project_paths(dirMain, experiment)
   time_info <- get_timestep_info(experiment)
+
+  # SCE settings are defined in the experiment configuration.
+  if (!is.list(experiment$local_calibration) ||
+      !is.list(experiment$local_calibration$sce)) {
+    stop("Missing experiment$local_calibration$sce configuration")
+  }
+
+  sce <- experiment$local_calibration$sce
+
+  positive_integer <- function(x) {
+    is.numeric(x) && length(x) == 1L &&
+      is.finite(x) && x > 0 && x == floor(x)
+  }
+
+  positive_number <- function(x) {
+    is.numeric(x) && length(x) == 1L &&
+      is.finite(x) && x > 0
+  }
+
+  if (!positive_integer(sce$maxn) ||
+      !positive_integer(sce$kstop) ||
+      !positive_number(sce$pcento)) {
+    stop("Invalid SCE settings in experiment configuration")
+  }
   
   ensure_dir(work_dir)
   
@@ -143,9 +167,9 @@ prepare_fuse_workspace <- function(dirMain, work_dir, basinID, zDecision, experi
     paste0('transfo = "', experiment$transformation, '"'),
     "",
     "[sce]",
-    "maxn   = 10000",
-    "kstop  = 3",
-    "pcento = 0.001"
+    paste0("maxn   = ", sce$maxn),
+    paste0("kstop  = ", sce$kstop),
+    paste0("pcento = ", sce$pcento)
   )
   
   config_file <- file.path(control_dir, paste0("fuse_control_", basinID, "_", zDecision, ".toml"))

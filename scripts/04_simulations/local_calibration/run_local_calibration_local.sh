@@ -82,54 +82,61 @@ fi
 pending=()
 missing=()
 completed=()
-seen=" "
 
-while IFS= read -r basinID || [[ -n "$basinID" ]]; do
+# Read and validate the canonical basin list, then inspect all archives.
+# One R process handles the entire campaign.
+BASIN_PREFLIGHT="$(
+  Rscript --vanilla - \
+    "$DIR_MAIN" "$BASIN_FILE" "$EXPERIMENT_DIR" "$ZDECISION" <<'RS'
+args <- commandArgs(trailingOnly = TRUE)
 
-  # Accept blank lines and comments.
-  [[ -z "$basinID" || "$basinID" == \#* ]] && continue
+source(file.path(args[1], "scripts/functions/basins.R"))
+source(file.path(args[1], "scripts/functions/local_calibration.R"))
 
-  [[ "$basinID" =~ ^[0-9]+$ ]] || {
-    echo "Invalid basin ID: $basinID" >&2
-    exit 1
-  }
+basins <- read_basin_ids(args[2])
 
-  # Prevent duplicate runs of the same basin.
-  if [[ "$seen" == *" $basinID "* ]]; then
-    echo "Duplicate basin ID: $basinID" >&2
-    exit 1
-  fi
-  seen="${seen}${basinID} "
+for (basin in basins) {
+  archive <- local_calibration_archive_status(
+    experiment_dir = args[3],
+    basinID = basin,
+    zDecision = args[4]
+  )
 
-  raw_dir="$EXPERIMENT_DIR/outputs/zDecision_${ZDECISION}/${basinID}/sce"
-  hydro_dir="$EXPERIMENT_DIR/hydrographs/zDecision_${ZDECISION}/${basinID}/sce"
+  reason <- gsub("[\t\r\n]", " ", archive$reason)
+
+  cat(basin, archive$status, reason, sep = "\t")
+  cat("\n")
+}
+RS
+)" || {
+  echo "Failed to validate basin list or calibration archives" >&2
+  exit 1
+}
+
+while IFS=$'\t' read -r basinID archive_status archive_reason ||
+      [[ -n "$basinID" ]]; do
+
 
   forcing="$DIR_MAIN/data/forcings/$TIMESTEP/$basinID/${basinID}_input.nc"
 
-  prefix="${basinID}_${ZDECISION}__"
 
-  # A completed calibration must contain its essential outputs.
-  if [[ -f "$hydro_dir/qSim_selected.rds" &&
-        -f "$hydro_dir/metadata.rds" &&
-        -f "$raw_dir/${prefix}para_sce.nc" &&
-        -f "$raw_dir/${prefix}para_opt.nc" &&
-        -f "$raw_dir/${prefix}runs_opt.nc" &&
-        -f "$raw_dir/${prefix}sce_output.txt" &&
-        -f "$raw_dir/sce_console.log" &&
-        -f "$raw_dir/opt_console.log" &&
-        -f "$raw_dir/fuse_control.toml" ]]; then
-
-    completed+=("$basinID")
-    continue
-  fi
-
-  # Never interpret partial archives as a completed run.
-  if [[ -e "$raw_dir" || -e "$hydro_dir" ]]; then
-    echo "Incomplete archive for basin $basinID:" >&2
-    echo "$raw_dir" >&2
-    echo "$hydro_dir" >&2
-    exit 1
-  fi
+  # Archive status comes from the common R validator.
+  case "$archive_status" in
+    complete)
+      completed+=("$basinID")
+      continue
+      ;;
+    incomplete)
+      echo "Incomplete archive for basin $basinID: $archive_reason" >&2
+      exit 1
+      ;;
+    absent)
+      ;;
+    *)
+      echo "Unknown archive status for basin $basinID: $archive_status" >&2
+      exit 1
+      ;;
+  esac
 
   if [[ ! -f "$forcing" ]]; then
     missing+=("$basinID")
@@ -138,7 +145,7 @@ while IFS= read -r basinID || [[ -n "$basinID" ]]; do
 
   pending+=("$basinID")
 
-done < "$BASIN_FILE"
+done <<< "$BASIN_PREFLIGHT"
 
 total=$(( ${#completed[@]} + ${#pending[@]} + ${#missing[@]} ))
 

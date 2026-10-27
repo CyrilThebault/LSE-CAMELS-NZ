@@ -34,6 +34,14 @@ experiment <- list(
   metric         = "KGE",
   transformation = "1",
 
+  local_calibration = list(
+    sce = list(
+      maxn   = 10000L,
+      kstop  = 3L,
+      pcento = 0.001
+    )
+  ),
+
   nIter0 = 500L,
   nRefinementSteps = 2L,
 

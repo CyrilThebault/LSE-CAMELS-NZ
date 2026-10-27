@@ -41,11 +41,57 @@ BASIN_FILE="${BASIN_FILE:-$DIR_MAIN/config/basins.txt}"
   exit 1
 }
 
-# One array index corresponds to one line of basin IDs.
-# Empty lines and comment lines are ignored.
-mapfile -t BASINS < <(
-  awk 'NF && $1 !~ /^#/ {print $1}' "$BASIN_FILE"
-)
+# Verify that the input files match those validated at submission.
+# Fail closed if the submission fingerprints were not provided.
+BASIN_SHA256="${BASIN_SHA256:?Missing BASIN_SHA256 from submission}"
+CONFIG_SHA256="${CONFIG_SHA256:?Missing CONFIG_SHA256 from submission}"
+
+verify_sha256() {
+  local file="$1"
+  local expected="$2"
+  local label="$3"
+  local output actual
+
+  if [[ ! -f "$file" ]]; then
+    echo "ERROR: missing $label file: $file" >&2
+    return 1
+  fi
+
+  output="$(sha256sum "$file")" || {
+    echo "ERROR: cannot compute SHA-256 for $label" >&2
+    return 1
+  }
+
+  actual="${output%% *}"
+
+  if [[ "$actual" != "$expected" ]]; then
+    echo "ERROR: SHA-256 mismatch for $label: $file" >&2
+    echo "Expected: $expected" >&2
+    echo "Actual:   $actual" >&2
+    return 1
+  fi
+}
+
+verify_sha256 "$BASIN_FILE" "$BASIN_SHA256" "BASIN_FILE"
+verify_sha256 "$CONFIG_FILE" "$CONFIG_SHA256" "CONFIG_FILE"
+
+# Use the canonical R basin-list reader.
+# Slurm array indices refer to positions in the validated list.
+BASIN_IDS="$(
+  Rscript --vanilla - "$DIR_MAIN" "$BASIN_FILE" <<'RS'
+args <- commandArgs(trailingOnly = TRUE)
+
+source(file.path(args[1], "scripts/functions/basins.R"))
+
+basins <- read_basin_ids(args[2])
+cat(paste(basins, collapse = "\n"))
+RS
+)" || {
+  echo "Failed to validate basin list: $BASIN_FILE" >&2
+  exit 1
+}
+
+mapfile -t BASINS <<< "$BASIN_IDS"
 
 INDEX="${SLURM_ARRAY_TASK_ID:?Submit with --array}"
 
@@ -55,11 +101,6 @@ if (( INDEX < 1 || INDEX > ${#BASINS[@]} )); then
 fi
 
 BASIN_ID="${BASINS[$((INDEX - 1))]}"
-
-[[ "$BASIN_ID" =~ ^[0-9]+$ ]] || {
-  echo "Invalid basin ID: $BASIN_ID" >&2
-  exit 1
-}
 
 # Read zDecision from the experiment configuration.
 ZDECISION="$(
@@ -71,42 +112,64 @@ ZDECISION="$(
   ' "$CONFIG_FILE" "$DIR_MAIN"
 )"
 
-RAW_DIR="$EXPERIMENT_DIR/outputs/zDecision_${ZDECISION}/${BASIN_ID}/sce"
-HYDRO_DIR="$EXPERIMENT_DIR/hydrographs/zDecision_${ZDECISION}/${BASIN_ID}/sce"
 
-PREFIX="${BASIN_ID}_${ZDECISION}__"
 
 echo "===== SCE ARRAY TASK ====="
 echo "Array task: $INDEX / ${#BASINS[@]}"
 echo "Basin: $BASIN_ID"
 echo "Configuration: $CONFIG_FILE"
 echo "Basin file: $BASIN_FILE"
-sha256sum "$BASIN_FILE"
+echo "Basin SHA256: $BASIN_SHA256"
+echo "Config SHA256: $CONFIG_SHA256"
 
-# Allow safe validation of the Slurm array mapping.
+# Validate the selected basin's archive with the common R helper.
+# This check also runs in DRY_RUN mode.
+ARCHIVE_RESULT="$(
+  Rscript --vanilla - \
+    "$DIR_MAIN" "$EXPERIMENT_DIR" "$BASIN_ID" "$ZDECISION" <<'RS'
+args <- commandArgs(trailingOnly = TRUE)
+
+source(file.path(args[1], "scripts/functions/local_calibration.R"))
+
+archive <- local_calibration_archive_status(
+  experiment_dir = args[2],
+  basinID = args[3],
+  zDecision = args[4]
+)
+
+reason <- gsub("[\t\r\n]", " ", archive$reason)
+cat(archive$status, reason, sep = "\t")
+RS
+)" || {
+  echo "ERROR: failed to inspect calibration archive for $BASIN_ID" >&2
+  exit 1
+}
+
+IFS=$'\t' read -r ARCHIVE_STATUS ARCHIVE_REASON <<< "$ARCHIVE_RESULT"
+
+case "$ARCHIVE_STATUS" in
+  complete|absent)
+    echo "Archive status: $ARCHIVE_STATUS ($ARCHIVE_REASON)"
+    ;;
+  incomplete)
+    echo "ERROR: incomplete calibration archive for $BASIN_ID: $ARCHIVE_REASON" >&2
+    exit 1
+    ;;
+  *)
+    echo "ERROR: unknown archive status for $BASIN_ID: $ARCHIVE_STATUS" >&2
+    exit 1
+    ;;
+esac
+
+# Dry run validates the array mapping and archive without starting FUSE.
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "DRY RUN -- basin selected, no calibration started"
   exit 0
 fi
 
-# Skip completed calibrations.
-if [[ -f "$HYDRO_DIR/qSim_selected.rds" &&
-      -f "$HYDRO_DIR/metadata.rds" &&
-      -f "$RAW_DIR/${PREFIX}para_sce.nc" &&
-      -f "$RAW_DIR/${PREFIX}para_opt.nc" &&
-      -f "$RAW_DIR/${PREFIX}runs_opt.nc" &&
-      -f "$RAW_DIR/${PREFIX}sce_output.txt" &&
-      -f "$RAW_DIR/sce_console.log" &&
-      -f "$RAW_DIR/opt_console.log" &&
-      -f "$RAW_DIR/fuse_control.toml" ]]; then
+if [[ "$ARCHIVE_STATUS" == "complete" ]]; then
   echo "SKIP: calibration already archived"
   exit 0
-fi
-
-# Never overwrite incomplete results.
-if [[ -e "$RAW_DIR" || -e "$HYDRO_DIR" ]]; then
-  echo "ERROR: incomplete calibration archive for $BASIN_ID" >&2
-  exit 1
 fi
 
 # Unique scratch directory for this array task.
