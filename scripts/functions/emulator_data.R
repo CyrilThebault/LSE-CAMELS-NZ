@@ -65,19 +65,17 @@ build_emulator_dataset <- function(paths, experiment_dir, basin_ids, zDecision, 
       
       for (s in 0:(iStep - 1L)) {
         
-        f <- file.path(
+        candidate_dir <- file.path(
           experiment_dir, "outputs", paste0("zDecision_", zDecision),
-          "train", id, paste0("candidates_step_", s, ".RData")
+          "train", id
         )
-        
-        if (!file.exists(f)) {
-          stop("Missing previous-step training candidates: ", f)
-        }
-        
-        ps <- load_rdata_single(f)
+
+        ps <- read_emulator_candidates(
+          candidate_dir, s, emulator_type
+        )$data
         
         ps <- ps[
-          ps$emulator == emulator_type & is.finite(ps$KGEc),
+          is.finite(ps$KGEc),
           ,
           drop = FALSE
         ]
@@ -113,4 +111,253 @@ build_emulator_dataset <- function(paths, experiment_dir, basin_ids, zDecision, 
   rownames(out) <- NULL
   
   out
+}
+
+# ==============================================================================
+# Read evaluated or unevaluated emulator candidates from one storage format.
+#
+# New format:
+#   candidates_step_<step>_<emulator>.RData
+#
+# Historical format:
+#   candidates_step_<step>.RData
+#
+# Historical source-row indices are retained for archive provenance.
+# ==============================================================================
+
+read_emulator_candidates <- function(candidate_dir, model_step, emulator) {
+
+  if (!is.numeric(model_step) ||
+      length(model_step) != 1L ||
+      is.na(model_step) ||
+      !is.finite(model_step) ||
+      model_step < 0 ||
+      model_step != floor(model_step)) {
+    stop("Expected one non-negative integer model_step")
+  }
+
+  if (!is.character(emulator) ||
+      length(emulator) != 1L ||
+      is.na(emulator) ||
+      !grepl("^[A-Za-z0-9_]+$", emulator)) {
+    stop("Invalid emulator identifier")
+  }
+
+  candidate_dir <- normalizePath(
+    candidate_dir,
+    mustWork = TRUE
+  )
+
+  prefix <- paste0(
+    "candidates_step_", as.integer(model_step)
+  )
+
+  individual_file <- file.path(
+    candidate_dir,
+    paste0(prefix, "_", emulator, ".RData")
+  )
+
+  legacy_file <- file.path(
+    candidate_dir,
+    paste0(prefix, ".RData")
+  )
+
+  has_individual <- file.exists(individual_file)
+  has_legacy <- file.exists(legacy_file)
+
+  if (has_individual && has_legacy) {
+    stop(
+      "Ambiguous candidate storage: both individual ",
+      "and historical files exist for ", emulator
+    )
+  }
+
+  if (!has_individual && !has_legacy) {
+    stop(
+      "Missing candidate file for emulator ",
+      emulator,
+      " at step ", model_step,
+      " under ", candidate_dir
+    )
+  }
+
+  source_file <- if (has_individual) {
+    individual_file
+  } else {
+    legacy_file
+  }
+
+  x <- load_rdata_single(source_file)
+
+  if (!is.data.frame(x) ||
+      !nrow(x) ||
+      !all(c("emulator", "model_step") %in% names(x))) {
+    stop("Invalid candidate data in ", source_file)
+  }
+
+  if (anyNA(x$model_step) ||
+      any(x$model_step != model_step)) {
+    stop("Candidate model-step mismatch: ", source_file)
+  }
+
+  if (has_individual) {
+
+    if (anyNA(x$emulator) ||
+        any(as.character(x$emulator) != emulator)) {
+      stop(
+        "Individual candidate file contains unexpected emulators: ",
+        source_file
+      )
+    }
+
+    source_row_indices <- seq_len(nrow(x))
+    storage_format <- "individual"
+
+  } else {
+
+    source_row_indices <- which(
+      !is.na(x$emulator) &
+        as.character(x$emulator) == emulator
+    )
+
+    if (!length(source_row_indices)) {
+      stop(
+        "Emulator ", emulator,
+        " absent from historical candidate file: ",
+        source_file
+      )
+    }
+
+    x <- x[
+      source_row_indices,
+      ,
+      drop = FALSE
+    ]
+
+    storage_format <- "legacy"
+  }
+
+  list(
+    data = x,
+    format = storage_format,
+    source_file = source_file,
+    source_row_indices = source_row_indices
+  )
+}
+
+
+# ==============================================================================
+# Candidate file transactions
+#
+# Lock directories are specific to each candidate file.
+# Locks are not removed automatically after abrupt process termination.
+# ==============================================================================
+
+with_candidate_lock <- function(file, expr) {
+
+  if (!is.character(file) ||
+      length(file) != 1L ||
+      is.na(file) ||
+      !nzchar(file) ||
+      !dir.exists(dirname(file))) {
+    stop("Invalid candidate file path")
+  }
+
+  lock <- paste0(file, ".lock")
+
+  if (!dir.create(lock, showWarnings = FALSE)) {
+    stop(
+      "Candidate lock unavailable: ", lock,
+      "\nInspect the running task before removing any stale lock."
+    )
+  }
+
+  on.exit(
+    unlink(lock, recursive = TRUE),
+    add = TRUE
+  )
+
+  owner <- c(
+    paste0("pid=", Sys.getpid()),
+    paste0("host=", Sys.info()[["nodename"]]),
+    paste0(
+      "started=",
+      format(Sys.time(), tz = "UTC", usetz = TRUE)
+    )
+  )
+
+  writeLines(owner, file.path(lock, "owner.txt"))
+
+  force(expr)
+}
+
+
+# ==============================================================================
+# Atomic candidate serialization
+#
+# Must be called inside with_candidate_lock().
+#
+# replace = FALSE : create new GA candidates
+# replace = TRUE  : replace existing candidates after FUSE evaluation
+# ==============================================================================
+
+save_candidate_atomic <- function(paramSearch, file, replace = FALSE) {
+
+  if (!is.data.frame(paramSearch) || nrow(paramSearch) == 0L) {
+    stop("Expected a non-empty candidate data frame")
+  }
+
+  if (!is.character(file) ||
+      length(file) != 1L ||
+      is.na(file) ||
+      !nzchar(file)) {
+    stop("Invalid candidate file path")
+  }
+
+  if (!identical(replace, TRUE) &&
+      !identical(replace, FALSE)) {
+    stop("replace must be TRUE or FALSE")
+  }
+
+  if (!dir.exists(paste0(file, ".lock"))) {
+    stop("Candidate file lock is required")
+  }
+
+  if (replace && !file.exists(file)) {
+    stop("Cannot replace missing candidate file: ", file)
+  }
+
+  if (!replace && file.exists(file)) {
+    stop("Candidate file already exists: ", file)
+  }
+
+  temporary <- tempfile(
+    pattern = ".candidates_",
+    tmpdir = dirname(file),
+    fileext = ".RData"
+  )
+
+  on.exit({
+    if (file.exists(temporary)) {
+      unlink(temporary)
+    }
+  }, add = TRUE)
+
+  save(paramSearch, file = temporary)
+
+  # Recheck the target immediately before committing.
+
+  if (replace && !file.exists(file)) {
+    stop("Candidate file disappeared before replacement")
+  }
+
+  if (!replace && file.exists(file)) {
+    stop("Candidate file appeared before creation")
+  }
+
+  if (!file.rename(temporary, file)) {
+    stop("Atomic candidate file commit failed: ", file)
+  }
+
+  invisible(file)
 }

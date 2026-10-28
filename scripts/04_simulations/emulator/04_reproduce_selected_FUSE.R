@@ -31,6 +31,7 @@ stopifnot(
 )
 
 source(file.path(dirMain, "scripts/functions/common.R"))
+source(file.path(dirMain, "scripts/functions/emulator_data.R"))
 source(file.path(dirMain, "scripts/functions/fuse.R"))
 
 experiment <- load_workflow_config(config_file)
@@ -49,14 +50,17 @@ meta <- load_rdata_single(
 info <- get_parameter_info(meta, zDecision)
 colsX <- paste0("p", seq_along(info$names))
 
-candidate_file <- file.path(
+candidate_dir <- file.path(
   experiment_dir, "outputs",
   paste0("zDecision_", zDecision),
-  phase, basinID,
-  paste0("candidates_step_", modelStep, ".RData")
+  phase, basinID
 )
 
-ps <- load_rdata_single(candidate_file)
+candidate <- read_emulator_candidates(
+  candidate_dir, modelStep, emulator
+)
+
+ps <- candidate$data
 
 stopifnot(
   is.data.frame(ps),
@@ -77,8 +81,8 @@ selected_rows <- eligible[
 
 stopifnot(length(selected_rows) == 1L)
 
-i <- selected_rows[1]
-selected <- ps[i, , drop = FALSE]
+i <- as.integer(candidate$source_row_indices[selected_rows[1L]])
+selected <- ps[selected_rows[1L], , drop = FALSE]
 params <- as.numeric(selected[1, colsX])
 
 stopifnot(
@@ -114,6 +118,8 @@ cat("Step:", modelStep, "\n")
 cat("zDecision:", zDecision, "\n")
 cat("Resolution:", experiment$timestep, "\n")
 cat("Selected row:", i, "\n")
+cat("Candidate format:", candidate$format, "\n")
+cat("Candidate file:", candidate$source_file, "\n")
 cat("Archived KGEc:", selected$KGEc, "\n")
 cat("Archived KGEe:", selected$KGEe, "\n")
 cat("Output:", out_dir, "\n")
@@ -155,6 +161,18 @@ if (file.exists(sim_file) || file.exists(meta_file)) {
   }
 
   saved <- readRDS(meta_file)
+
+  if (!is.null(saved$candidate_format)) {
+    stopifnot(identical(
+      saved$candidate_format, candidate$format
+    ))
+  }
+
+  if (!is.null(saved$candidate_file)) {
+    stopifnot(identical(
+      saved$candidate_file, candidate$source_file
+    ))
+  }
   qsim <- readRDS(sim_file)
 
   stopifnot(
@@ -265,6 +283,8 @@ metadata <- list(
   phase = phase,
   emulator = emulator,
   selected_row = as.integer(i),
+  candidate_format = candidate$format,
+  candidate_file = candidate$source_file,
   params_normalized = params,
   archived_KGEc = selected$KGEc,
   archived_KGEe = selected$KGEe,
