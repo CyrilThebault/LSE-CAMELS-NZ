@@ -139,3 +139,65 @@ project_paths <- function(dirMain, experiment) {
     experiments = file.path(dirMain, "experiments", timestep)
   )
 }
+
+
+# ==============================================================================
+# Resolve a unified campaign configuration for one timestep
+#
+# The campaign defines all permitted timesteps.
+# Existing scientific functions continue to receive a scalar timestep.
+#
+# The final time boundaries preserve the historical daily/hourly conventions.
+# ==============================================================================
+
+resolve_workflow_config <- function(campaign, timestep) {
+
+  if (!is.list(campaign) ||
+      !"timesteps" %in% names(campaign) ||
+      "timestep" %in% names(campaign)) {
+    stop("Expected an unresolved unified campaign configuration")
+  }
+
+  allowed <- campaign$timesteps
+
+  if (!is.character(allowed) ||
+      length(allowed) == 0L ||
+      anyNA(allowed) ||
+      any(!nzchar(allowed)) ||
+      anyDuplicated(allowed) ||
+      any(!allowed %in% c("daily", "hourly"))) {
+    stop("Invalid configured timesteps")
+  }
+
+  if (!is.character(timestep) ||
+      length(timestep) != 1L ||
+      is.na(timestep) ||
+      !timestep %in% allowed) {
+    stop(
+      "Invalid timestep selection. Configured: ",
+      paste(allowed, collapse = ", ")
+    )
+  }
+
+  resolved <- campaign
+
+  names(resolved)[
+    names(resolved) == "timesteps"
+  ] <- "timestep"
+
+  resolved$timestep <- timestep
+
+  if (timestep == "hourly") {
+
+    for (field in c(
+      "simulation_end",
+      "calibration_end",
+      "evaluation_end"
+    )) {
+
+      resolved[[field]] <- resolved[[field]] + 23 * 3600
+    }
+  }
+
+  resolved
+}
