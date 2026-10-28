@@ -1,910 +1,233 @@
-# CAMELS-NZ lumped Large-Sample Emulator workflow
+# CAMELS-NZ Large-Sample Emulator workflow
 
-This repository adapts the [Emulators](https://github.com/nvasquez-plac/Emulators)
-framework developed by the Emulator Development Working Group at the University
-of Calgary to a lumped CAMELS-NZ workflow supporting both daily and hourly time
-steps.
+This repository supports the development and evaluation of Large-Sample
+Emulators (LSE) for lumped FUSE hydrological simulations across
+CAMELS-NZ catchments.
 
-A small prepared testcase is available under `testcase/` for users who want to
-explore the emulator without downloading and processing the complete CAMELS-NZ
-dataset or preparing a full FUSE template.
+The project investigates the performance of emulators operating at
+daily and hourly temporal resolutions, including their ability to
+reproduce continuous streamflow and flood-event characteristics.
 
-## 0. Setup
+It also examines spatial generalization across catchments and compares
+regionalized emulator predictions with locally calibrated FUSE models.
 
-1. Copy `config/basins.txt.example` to `config/basins.txt` and fill it with the
-   study basins. The file must contain one CAMELS-NZ `Station_ID` per line,
-   with no header, additional columns, empty lines, or duplicate IDs.
+The workflow is organized into independent, reproducible modules.
+This README introduces the overall structure. Each module has its own
+documentation with detailed requirements, commands, outputs and
+validation procedures.
 
-2. Review the experiment configurations under:
+## Repository organization
 
-   ```text
-   config/experiment_daily.R
-   config/experiment_hourly.R
-   ```
-
-   Each workflow invocation must use an explicit configuration file. For
-   shell wrappers, set `CONFIG_FILE`; R scripts receive the configuration file
-   as an explicit command-line argument.
-
-   For example, for the daily configuration:
-
-   ```bash
-   export DIR_MAIN="$PWD"
-   export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
-   ```
-
-   For the hourly configuration:
-
-   ```bash
-   export DIR_MAIN="$PWD"
-   export CONFIG_FILE="$DIR_MAIN/config/experiment_hourly.R"
-   ```
-
-   Edit the selected configuration to match your objectives. Experiment dates
-   are defined explicitly and should be consistent with the selected time step.
-
-   `ROOT` can be supplied as an environment variable.
-
-3. Review `config/attributes_used.txt`.
-
-4. Make sure you are in the repository root:
-
-   ```text
-   /your/path/LSE-CAMELS-NZ
-   ```
-
-5. Prepare your working environment by compiling the FUSE `staging` branch
-   at the commit documented in the [FUSE](#fuse) section below (see
-   https://ch-earth-fuse.readthedocs.io/en/staging/install/install_fuse/).
-
-6. Check the required R packages:
-
-   ```bash
-   Rscript scripts/00_check_packages.R
-   ```
-
-7. On ARC HPC, create the workflow log directories before submitting jobs:
-
-   ```bash
-   mkdir -p logs/prepare logs/iter0 logs/emulator
-   ```
-
-### ARC HPC environment
-
-On ARC, the following modules are used:
-
-```bash
-. /work/comphyd_lab/local/modules/spack/2024v5/lmod-init-bash
-
-module purge
-module unuse $MODULEPATH
-module use /work/comphyd_lab/local/modules/spack/2024v5/modules/linux-rocky8-x86_64/Core/
-
-module load gcc/14.2.0
-module load cmake/3.30.2
-module load hdf5/1.14.3
-module load netcdf-c/4.9.2
-module load netcdf-fortran/4.6.1
-module load r/4.4.1
-```
-
-The provided ARC Slurm scripts load this environment automatically.
-
-### Time-step-specific directories
-
-The temporal resolution is defined by `experiment$timestep` in the explicit
-configuration file supplied to the workflow.
-
-Time-step-specific inputs and outputs are automatically separated into:
-
-```text
-data/forcings/<timestep>/
-data/useful_files/<timestep>/
-outputs/<timestep>/iter0/
-experiments/<timestep>/
-```
-
-where `<timestep>` is either `daily` or `hourly`.
-
-Files that are independent of the temporal resolution remain shared, including:
-
-```text
-data/settings/
-data/zDecisions/
-data/useful_files/attributes.RData
-data/useful_files/fuse_settings_files.RData
-```
-
-### Using the prepared testcase
-
-The `testcase/` directory contains a small five-catchment example with prepared
-daily and hourly FUSE inputs, configuration files, and precomputed iter0
-results.
-
-See `testcase/README.md` for detailed instructions.
-
-Depending on what you want to test:
-
-- copy the testcase `config/` and `data/` directories and start from **Step 2**
-  to rerun the initial FUSE ensemble;
-- copy the testcase `config/`, `data/`, and `outputs/` directories and start
-  from **Step 3** to test the emulator workflow directly.
-
-After copying the testcase, set `CONFIG_FILE` to either the daily or hourly
-configuration before running the workflow.
-
-## 1. Prepare CAMELS-NZ/FUSE inputs
-
-The configuration file determines the temporal resolution and all
-configuration-dependent paths used by the preparation workflow.
-
-The CAMELS-NZ forcing and elevation-band files are prepared independently for
-each basin.
-
-### On ARC HPC (University of Calgary)
-
-The provided Slurm script uses a job array to prepare basins independently on
-ARC. The number of array tasks is determined from `config/basins.txt`.
-
-```bash
-export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
-
-NBASINS=$(wc -l < "$DIR_MAIN/config/basins.txt")
-
-sbatch \
-  --array=1-"$NBASINS" \
-  --export=ALL,DIR_MAIN="$DIR_MAIN",CONFIG_FILE="$CONFIG_FILE" \
-  scripts/01_prepare/01_prepare_CAMELS_NZ_hpc_arc.slurm
-```
-
-### On a local machine
-
-A local shell script is provided to parallelize the input data preprocessing
-step without Slurm. It uses GNU Parallel to prepare multiple basins
-simultaneously across multiple cores. For example, on macOS GNU Parallel can be
-installed with Homebrew:
-
-```bash
-brew install parallel
-```
-
-Then, the step can be run with:
-
-```bash
-export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
-export NCORES=5
-
-bash scripts/01_prepare/01_prepare_CAMELS_NZ_local.sh
-```
-
-The number of parallel workers can be changed through `NCORES` depending on the
-available hardware.
-
-For a sequential run, the preparation script can also be called directly:
-
-```bash
-Rscript scripts/01_prepare/01_prepare_CAMELS_NZ.R \
-  ALL \
-  "$CONFIG_FILE" \
-  "$DIR_MAIN"
-```
-
-Prepared forcing and elevation-band files are written to:
-
-```text
-data/forcings/<timestep>/
-```
-
-### Complete input preparation
-
-Once the basin-level preparation is complete, generate the shared FUSE settings,
-metadata, CAMELS-NZ attributes, and validate the prepared inputs:
-
-```bash
-Rscript scripts/01_prepare/02_prepare_FUSE_settings.R \
-  "$CONFIG_FILE" "$DIR_MAIN"
-
-Rscript scripts/01_prepare/03_create_FUSE_metadata.R \
-  "$CONFIG_FILE" "$DIR_MAIN"
-
-Rscript scripts/01_prepare/04_create_CAMELS_NZ_attributes.R \
-  "$CONFIG_FILE" "$DIR_MAIN"
-
-Rscript scripts/01_prepare/05_validate_preparation.R \
-  "$CONFIG_FILE" "$DIR_MAIN"
-```
-
-The preparation report is written to:
-
-```text
-data/useful_files/<timestep>/preparation_report.csv
-```
-
-Shared FUSE metadata and CAMELS-NZ attribute information remain under:
-
-```text
-data/useful_files/
-```
-
-This step can be skipped when using the prepared testcase.
-
-## 2. Generate immutable iter0 database
-
-The size of the initial parameter ensemble is defined by `nIter0` in the
-explicit workflow configuration.
-
-The normalized Latin Hypercube parameter design depends on the experiment seed,
-basin ID, number of iterations, and FUSE parameter set defined by the selected
-structural decision. The temporal resolution does not directly enter the
-sampling procedure.
-
-The resulting FUSE simulations are stored separately for each temporal
-resolution under:
-
-```text
-outputs/<timestep>/iter0/
-```
-
-### On ARC HPC (University of Calgary)
-
-The provided Slurm script uses a job array to run the initial FUSE ensemble
-independently for each basin on ARC. The number of array tasks is determined
-from `config/basins.txt`.
-
-```bash
-export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
-
-NBASINS=$(wc -l < "$DIR_MAIN/config/basins.txt")
-
-sbatch \
-  --array=1-"$NBASINS" \
-  --export=ALL,DIR_MAIN="$DIR_MAIN",CONFIG_FILE="$CONFIG_FILE" \
-  scripts/02_iter0/run_iter0_hpc_arc.slurm
-```
-
-### On a local machine
-
-A local shell script using GNU Parallel is also provided for running iter0
-without Slurm.
-
-```bash
-export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
-export NCORES=5
-
-bash scripts/02_iter0/run_iter0_local.sh
-```
-
-The number of parallel workers can be changed through `NCORES` depending on the
-available hardware.
-
-This step can be skipped when using the precomputed
-`outputs/<timestep>/iter0/` distributed with the testcase.
-
-## 3. Create experiment splits
-
-Experiment directories are created under the temporal resolution defined by
-the supplied configuration:
-
-```text
-experiments/<timestep>/
-```
-
-For example:
-
-```bash
-export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
-
-Rscript scripts/03_experiments/01_create_experiment_splits.R \
-  allseen "$CONFIG_FILE" "$DIR_MAIN"
-
-Rscript scripts/03_experiments/01_create_experiment_splits.R \
-  loo "$CONFIG_FILE" "$DIR_MAIN"
-
-Rscript scripts/03_experiments/01_create_experiment_splits.R \
-  kfold "$CONFIG_FILE" "$DIR_MAIN" 2
-
-Rscript scripts/03_experiments/01_create_experiment_splits.R \
-  cluster "$CONFIG_FILE" "$DIR_MAIN"
-```
-
-Available experiment modes are:
-
-- `allseen`: all basins are used for training and final evaluation;
-- `loo`: each basin is held out once;
-- `kfold`: basins are randomly divided into K folds.
-
-- `cluster`: each hydrological cluster is held out in turn.
-
-For example, with `config/experiment_daily.R`, a 2-fold experiment is created
-under:
-
-```text
-experiments/daily/kfold/
-```
-
-With `config/experiment_hourly.R`, it is created under:
-
-```text
-experiments/hourly/kfold/
-```
-
-Cluster-based cross-validation is also supported. Cluster labels are read from `data/useful_files/attributes.RData`; the optional cluster-column argument defaults to `hydro_cluster`. Each cluster is held out in turn, using only the basins listed in `config/basins.txt`.
-
-## 4. Run one fold
-
-The fold workflow trains on `train_basins.txt` and refines the emulator only
-with those training basins. The current emulator is evaluated on
-`test_basins.txt` after the initial fit (step 0) and after each refinement step
-by searching the parameter space and running FUSE.
-
-Test-basin FUSE results are used only for evaluation and never feed back into
-model training.
-
-The same configuration file should be used to create the experiment splits and
-to run the corresponding emulator workflow.
-
-### On ARC HPC (University of Calgary)
-
-The provided Slurm script is configured for ARC HPC. As for the iter0 script,
-it can be adapted to other Slurm-based systems by modifying the HPC-specific
-configuration.
-
-To submit all splits of an experiment, use `submit_LSE_experiment_hpc_arc.sh`.
-For example, for a k-fold experiment:
-
-```bash
-export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
-
-bash scripts/04_simulations/emulator/submit_LSE_experiment_hpc_arc.sh \
-  "$DIR_MAIN" \
-  "$CONFIG_FILE" \
-  kfold
-```
-
-The arguments are the project root directory, the explicit configuration file,
-and the experiment name:
-
-```text
-<DIR_MAIN> <CONFIG_FILE> <experiment>
-```
-
-Supported experiments include `allseen`, `loo` and `kfold`.
-
-The temporal resolution is read from the supplied configuration file. Experiment
-splits are therefore discovered under: `experiments/<timestep>/<experiment>/`.
-
-The submission script discovers all valid split directories containing both
-`train_basins.txt` and `test_basins.txt` and submits one Slurm job per split.
-
-`ZDECISION` and `NREFINE` are read from the supplied configuration file by
-default and can be overridden through environment variables if required.
-
-To submit a single split manually, set the project and split directories
-explicitly. For example:
-
-```bash
-export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
-export EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
-export ZDECISION=126
-export NREFINE=2
-
-sbatch scripts/04_simulations/emulator/run_LSE_split_hpc_arc.slurm
-```
-
-For an hourly experiment, use the corresponding directory under
-`experiments/hourly/`.
-
-### On a local machine
-
-The equivalent workflow can be run locally with GNU Parallel.
-
-For example, for a daily experiment:
-
-```bash
-export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
-export EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
-export ZDECISION=126
-export NREFINE=2
-export NCORES=4
-
-bash scripts/04_simulations/emulator/run_LSE_split_local.sh
-```
-
-For an hourly experiment, set:
-
-```bash
-export CONFIG_FILE="$PWD/config/experiment_hourly.R"
-export EXPERIMENT_DIR="$PWD/experiments/hourly/kfold/fold_01"
-```
-
-before running the same script.
-
-## 5. Collect results
-
-Results are collected separately for each temporal resolution.
-
-For daily:
-
-```bash
-Rscript scripts/06_analysis/01_collect_results.R \
-  "$PWD/experiments/daily/kfold" \
-  126 \
-  "$PWD/config/experiment_daily.R" \
-  "$PWD"
-```
-
-For hourly:
-
-```bash
-Rscript scripts/06_analysis/01_collect_results.R \
-  "$PWD/experiments/hourly/kfold" \
-  126 \
-  "$PWD/config/experiment_hourly.R" \
-  "$PWD"
-```
-
-The resulting `results_summary.csv` is written inside the corresponding
-experiment directory. It contains one selected candidate per fold, test basin,
-emulator, and refinement step.
-
-## 6. Plot experiment performance
-
-After collecting the results, performance figures can be generated for any
-experiment type with:
-
-```bash
-Rscript scripts/06_analysis/02_plot_experiment_performance.R \
-  "$PWD/experiments/<timestep>/<experiment>" \
-  "$PWD/config/experiment_<timestep>.R" \
-  "$PWD"
-```
-
-For example:
-
-```bash
-Rscript scripts/06_analysis/02_plot_experiment_performance.R \
-  "$PWD/experiments/hourly/kfold" \
-  "$PWD/config/experiment_hourly.R" \
-  "$PWD"
-```
-
-or:
-
-```bash
-Rscript scripts/06_analysis/02_plot_experiment_performance.R \
-  "$PWD/experiments/hourly/allseen" \
-  "$PWD/config/experiment_hourly.R" \
-  "$PWD"
-```
-
-The script summarizes the final refinement step and writes its outputs under:
-
-```text
-plots/<timestep>/<experiment>/
-```
-
-The standard outputs include:
-
-- KGE distribution by emulator;
-- KGE empirical cumulative distribution function;
-- KGE by fold when multiple folds are present;
-- basin-wise KGE;
-- KGE evolution across refinement steps;
-- spatial distribution of final-step evaluation-period KGE;
-- `performance_summary.csv`;
-- `performance_by_step.csv`.
-
-Spatial plots use the New Zealand boundary and CAMELS-NZ station locations
-stored under:
-
-```text
-shapefiles/
-```
-
-The spatial plotting dependencies are `sf` and `viridisLite`, both checked by
-`scripts/00_check_packages.R`.
-
-## 7. Compare experiment performance
-
-Two or more experiments can be compared with:
-
-```bash
-Rscript scripts/06_analysis/03_compare_experiment_performance.R \
-  "$PWD" \
-  "$PWD/experiments/hourly/kfold" \
-  "$PWD/experiments/hourly/allseen"
-```
-
-Experiments from different temporal resolutions can also be compared. For
-example:
-
-```bash
-Rscript scripts/06_analysis/03_compare_experiment_performance.R \
-  "$PWD" \
-  "$PWD/experiments/daily/kfold" \
-  "$PWD/experiments/hourly/kfold"
-```
-
-Comparison outputs are written under:
-
-```text
-plots/comparisons/<scenario_1>__vs__<scenario_2>/
-```
-
-The comparison script generates a combined KGE empirical cumulative
-distribution function for all supplied scenarios.
-
-When exactly two scenarios are supplied, it additionally generates:
-
-- a paired basin-wise 1:1 KGE comparison;
-- a spatial map of the paired KGE difference;
-- `paired_comparison_summary.csv`.
-
-The complete performance summary for all supplied scenarios is written to:
-
-```text
-performance_comparison.csv
-```
-
-For paired comparisons, the KGE difference is defined as:
-
-```text
-delta KGE = scenario_y - scenario_x
-```
-
-where `scenario_x` is the first experiment supplied on the command line and
-`scenario_y` is the second. Positive values therefore indicate better
-performance for the second scenario, while negative values indicate better
-performance for the first scenario.
-
-## 8. Build the observed flood-event catalogue
-
-Observed flood events are detected once from the hourly observed discharge
-record and are subsequently used for both hourly and daily flood-performance
-analyses. Flood events are therefore not re-detected independently at each
-modelling time step.
-
-The catalogue is built from the observed discharge stored in:
-
-```text
-data/forcings/hourly/<ID>/<ID>_input.nc
-```
-
-for the catchments listed in:
-
-```text
-config/basins.txt
-```
-
-The detection procedure uses smoothed observed discharge to estimate baseflow
-and quickflow, identifies candidate quickflow events with `hydroEvents`, retains
-candidates whose aligned raw observed discharge exceeds the basin-specific Q99
-threshold, and associates them with event boundaries defined by a baseflow-index
-threshold of 0.95.
-
-Retained BFI95 fragments are first consolidated when raw observed discharge
-remains above Q99 between them and the inter-fragment minimum remains at least
-90% of the smaller adjacent peak. Adjacent high-flow events are then merged when
-either raw discharge remains above Q99 throughout the intervening period, or the
-gap is at most 12 hours and the intervening minimum remains at least 90% of the
-smaller adjacent peak.
-
-Event starts are left unchanged. Event ends may extend to the start of the first
-period of at least 12 consecutive hourly observations at or below Q99 after the
-final retained Q99 candidate. When another independent event follows in the same
-continuous-data block, this extension is clipped at the minimum observed
-discharge between the two event windows. If two final events share one hourly
-boundary, the shared observation is assigned to the later event by shortening
-the preceding event by one hour.
-
-Missing observed discharge divides each record into continuous finite-data
-blocks; events are never joined across missing-data gaps and no interpolation is
-used for flood detection.
-
-The resulting catalogue is written to:
-
-```text
-data/flood/
-├── observed_flood_catalogue.csv
-└── diagnostics/
-    ├── observed_flood_candidates.csv
-    ├── observed_flood_excluded.csv
-    └── observed_flood_summary.csv
-```
-
-The catalogue is canonical: the same observed `event_id` values are used for
-both hourly and daily flood-performance analyses.
-
-Flood detection is parallelised by catchment. The number of workers is
-controlled by `NCORES` locally and by `SLURM_CPUS_PER_TASK` on HPC.
-
-### On a local machine
-
-```bash
-export DIR_MAIN="$PWD"
-export NCORES=4
-
-bash scripts/01_prepare/floods/01_build_observed_flood_catalogue_local.sh
-```
-
-### On ARC HPC
-
-```bash
-export DIR_MAIN="$PWD"
-
-sbatch scripts/01_prepare/floods/01_build_observed_flood_catalogue_hpc_arc.slurm
-```
-
-### On FIR HPC
-
-```bash
-export DIR_MAIN="$PWD"
-
-sbatch scripts/01_prepare/floods/01_build_observed_flood_catalogue_hpc_fir.slurm
-```
-
-## 9. Visualise and quality-control the observed flood-event catalogue
-
-The observed flood catalogue produced in Step 8 is canonical and shared by
-hourly and daily flood-performance evaluation. Events are detected **only**
-from hourly observed discharge (`Qobs`); no daily redetection is performed.
-
-The workflow consists of event visualisation, automated QC screening, manual
-review, and finalisation. QC does not change event boundaries, merge events,
-or automatically exclude flagged events.
-
-### 9.1. Plot observed flood events
-
-The generic visualiser is:
-
-```text
-scripts/01_prepare/floods/02_plot_observed_flood_catalogue.R
-```
-
-Its command-line interface is:
-
-```bash
-Rscript scripts/01_prepare/floods/02_plot_observed_flood_catalogue.R \
-  <dirMain> <events.csv> <ID> <output.pdf>
-```
-
-It combines hourly observed discharge, flood-detection diagnostics, and
-geographical information to produce a catchment summary and event hydrographs.
-The same visualiser supports the full canonical catalogue or QC review events:
-
-```text
-data/flood/observed_flood_catalogue.csv
-data/flood/qc/observed_flood_qc_review.csv
-```
-
-The local, ARC, and Fir launchers select the default output directory and PDF
-filename from the input CSV:
-
-```text
-data/flood/pdf/<ID>_observed_flood_review.pdf
-data/flood/qc/pdf/<ID>_observed_flood_qc_review.pdf
-```
-
-`OUT_DIR` can override the output directory. By default, `EVENTS_FILE` is the
-canonical catalogue; selecting `observed_flood_qc_review.csv` activates QC
-annotations and displays only the events requiring review.
-
-#### Local
-
-Plot the complete canonical catalogue:
-
-```bash
-DIR_MAIN="$PWD" NCORES=4 \
-  bash scripts/01_prepare/floods/02_plot_observed_flood_catalogue_local.sh
-```
-
-Plot one basin:
-
-```bash
-DIR_MAIN="$PWD" BASIN_IDS=9140 NCORES=1 \
-  bash scripts/01_prepare/floods/02_plot_observed_flood_catalogue_local.sh
-```
-
-Plot QC review events for one basin:
-
-```bash
-DIR_MAIN="$PWD" BASIN_IDS=9140 NCORES=1 \
-EVENTS_FILE="$PWD/data/flood/qc/observed_flood_qc_review.csv" \
-  bash scripts/01_prepare/floods/02_plot_observed_flood_catalogue_local.sh
-```
-
-To generate all QC PDFs, select only basins listed in the QC review CSV:
-
-```bash
-QC_IDS=$(Rscript -e 'x <- read.csv("data/flood/qc/observed_flood_qc_review.csv"); cat(sort(unique(as.integer(x$ID))), collapse=" ")')
-
-DIR_MAIN="$PWD" NCORES=4 BASIN_IDS="$QC_IDS" \
-EVENTS_FILE="$PWD/data/flood/qc/observed_flood_qc_review.csv" \
-  bash scripts/01_prepare/floods/02_plot_observed_flood_catalogue_local.sh
-```
-
-#### ARC HPC
-
-```bash
-export DIR_MAIN="$PWD"
-sbatch scripts/01_prepare/floods/02_plot_observed_flood_catalogue_hpc_arc.slurm
-```
-
-For a single-basin test:
-
-```bash
-sbatch --export=ALL,DIR_MAIN="$PWD",BASIN_IDS=9140,NCORES=1 \
-  scripts/01_prepare/floods/02_plot_observed_flood_catalogue_hpc_arc.slurm
-```
-
-#### Fir HPC
-
-```bash
-export DIR_MAIN="$PWD"
-sbatch scripts/01_prepare/floods/02_plot_observed_flood_catalogue_hpc_fir.slurm
-```
-
-All three launchers support `DIR_MAIN`, `NCORES`, `BASIN_IDS`, `EVENTS_FILE`,
-and `OUT_DIR`. HPC execution should be validated on the respective cluster.
-
-### 9.2. Automated observed flood QC
-
-Run the screening script from the repository root:
-
-```bash
-NCORES=8 Rscript scripts/01_prepare/floods/03_screen_observed_flood_qc.R .
-```
-
-It reads `data/flood/observed_flood_catalogue.csv` and writes:
-
-```text
-data/flood/qc/observed_flood_qc.csv
-data/flood/qc/observed_flood_qc_review.csv
-```
-
-The first table includes all canonical events, their screening flags, and
-associated diagnostic metrics. The second contains the subset requiring
-manual review. Flags identify potential issues only; they do not cause
-automatic exclusion. Neither detection nor event segmentation is rerun.
-
-The `QC_OUT_DIR` environment variable can override the QC output directory.
-
-### 9.3. Manual QC decisions
-
-Human review decisions are stored in:
-
-```text
-data/flood/qc/observed_flood_qc_decisions.csv
-```
-
-The file contains four columns:
-
-| Column | Purpose |
+| Directory | Purpose |
 | --- | --- |
-| `event_id` | Exact canonical event identifier; do not edit existing IDs |
-| `decision` | `keep` or `exclude` |
-| `reason` | Required when `decision=exclude` |
-| `comment` | Optional explanatory note |
+| `config/` | Experiment configurations and basin selection |
+| `data/` | Hydrological inputs, catchment information and observed flood data |
+| `outputs/` | Initial simulation results and supporting outputs |
+| `experiments/` | Spatial experiments, archived simulations and evaluations |
+| `scripts/01_prepare/` | Preparation and validation of model inputs |
+| `scripts/02_iter0/` | Initial FUSE parameter ensemble |
+| `scripts/03_experiments/` | Spatial experiment partitions |
+| `scripts/04_simulations/` | Emulator simulations and local calibration |
+| `scripts/05_evaluation/` | Evaluation of archived FUSE hydrographs |
+| `scripts/06_analysis/` | Scientific analysis and comparison of evaluation results |
 
-Every event requiring QC review must have a decision. Events not flagged are
-accepted by default (`auto_pass`), but a non-flagged event can be manually
-excluded by adding its exact `event_id` with `decision=exclude` and a reason.
-Manual review never changes event boundaries or merges events.
+Daily and hourly experiments use separate configurations:
 
-The `data/` directory is ignored by Git, so the completed decision CSV must be
-backed up independently and distributed with the final research results
-(e.g., the Zenodo archive associated with the paper).
+- `config/experiment_daily.R`
+- `config/experiment_hourly.R`
 
-### 9.4. Finalise the reviewed catalogue
+Their inputs and results are organized by temporal resolution.
 
-```bash
-Rscript scripts/01_prepare/floods/04_finalize_observed_flood_qc.R .
-```
+## Workflow overview
 
-This script requires decisions for all events flagged for review. If any are
-pending, it does not produce a final reviewed catalogue. Otherwise it writes:
+### 1. Prepare hydrological inputs
 
-```text
-data/flood/qc/observed_flood_catalogue_reviewed.csv
-```
+The preparation module creates and validates the CAMELS-NZ inputs,
+FUSE settings and supporting data required by subsequent simulations.
 
-The output retains the canonical event IDs and boundaries and adds QC review
-results, including `qc_status` and `analysis_eligible`.
+Observed flood events are prepared and quality-controlled through a
+dedicated workflow. The reviewed hourly catalogue and its derived
+daily evaluation units provide a common observational reference for
+flood evaluation.
 
-| `qc_status` | Meaning | `analysis_eligible` |
-| --- | --- | --- |
-| `auto_pass` | Not flagged for manual review | `TRUE` |
-| `review_keep` | Flagged and manually retained | `TRUE` |
-| `review_exclude` | Flagged and manually excluded | `FALSE` |
-| `manual_exclude` | Not flagged but manually excluded | `FALSE` |
-| `review_pending` | Awaiting required decision; finalisation fails | Not finalised |
+Documentation:
 
-Downstream flood-performance analysis should use the reviewed catalogue and
-its `analysis_eligible` column. The same eligible observed events are used
-for daily and hourly evaluation.
+- [Input preparation](scripts/01_prepare/README.md)
+- [Observed flood catalogue](scripts/01_prepare/floods/README.md)
 
-## Important implementation notes
+### 2. Generate the initial FUSE ensemble
 
-- `outputs/<timestep>/iter0/` is shared by all experiments at a given temporal
-  resolution and should not be regenerated for individual cross-validation
-  experiments.
+The `iter0` module samples the FUSE parameter space, runs the initial
+simulations and produces the database used to train the emulators.
 
-- Daily and hourly iter0 databases are stored separately, even when they use
-  the same normalized parameter samples, because the corresponding FUSE
-  simulations use forcing data at different temporal resolutions.
+This stage belongs to the emulator workflow and is independent of
+local SCE calibration.
 
-- Experiment-specific models, candidate sets, and FUSE results are stored under
-  `experiments/<timestep>/<experiment>/<fold>/outputs/`.
+Documentation:
 
-- Daily and hourly experiments can coexist in the same repository without
-  overwriting their forcing data, iter0 simulations, or experiment results.
+- [Initial FUSE ensemble](scripts/02_iter0/README.md)
 
-- `data/settings/`, `data/zDecisions/`, CAMELS-NZ attributes, and FUSE parameter
-  metadata are shared between temporal resolutions.
+### 3. Define spatial experiments
 
-- Categorical attribute levels are defined from the complete CAMELS-NZ
-  attribute database so that valid categories absent from an individual
-  training fold remain usable for held-out basins.
+The experiment module creates and validates the spatial partitions
+used to evaluate emulator generalization.
 
-- The same numerical design-matrix recipe is stored with the emulator and
-  reused during prediction.
+Supported strategies include:
 
-- For the `allseen` experiment, the same basins appear in train and test
-  lists; test evaluations are still kept separate from emulator training for
-  consistent result collection.
+- `allseen`
+- `loo` (leave-one-out)
+- `kfold`
+- `cluster` (climate-zone-based partitioning)
 
-## CAMELS-NZ
+Spatial train/test partitions are distinct from the temporal
+calibration/evaluation periods used for hydrological metrics.
 
-This workflow uses data from the CAMELS-NZ dataset. The prepared test case
-contains a small subset of the CAMELS-NZ data distributed with this repository.
+Documentation:
 
-CAMELS-NZ is distributed under the Creative Commons Attribution 4.0
-International (CC BY 4.0) licence.
+- [Spatial experiment splits](scripts/03_experiments/README.md)
 
-CAMELS-NZ should be cited as:
+### 4. Produce archived FUSE simulations
 
-Bushra, S., Shakya, J., Cattoën, C., Fischer, S., and Pahlow, M.:
-CAMELS-NZ: hydrometeorological time series and landscape attributes for
-New Zealand, Earth System Science Data, 17, 5745–5760, 2025.
+Two simulation branches are available.
 
-https://doi.org/10.5194/essd-17-5745-2025
+**Large-Sample Emulators**
 
-Dataset:
+Emulators are trained using the initial FUSE database and refined
+through successive training and candidate-evaluation steps.
 
-https://doi.org/10.26021/canterburynz.28827644
+Selected parameter sets are reproduced with FUSE and their
+hydrographs are archived for evaluation.
 
-Licence:
+**Local calibration**
 
-https://creativecommons.org/licenses/by/4.0/
+Each catchment is calibrated independently using FUSE SCE.
+The optimized parameter set is reproduced and archived.
 
-## FUSE
+Local calibration does not depend on the emulator training workflow
+or spatial train/test partitions.
 
-This workflow uses the Framework for Understanding Structural Errors (FUSE)
-hydrological modelling framework.
+Documentation:
 
-The workflow was developed and tested using the `staging` branch of the
-CH-Earth FUSE implementation at commit
-`55864a2c56270bba85dd4cb998ed36665e134dec`:
+- [Emulator simulations](scripts/04_simulations/emulator/README.md)
+- [Local FUSE calibration](scripts/04_simulations/local_calibration/README.md)
 
-https://github.com/CH-Earth/fuse/tree/55864a2c56270bba85dd4cb998ed36665e134dec
+### 5. Evaluate archived simulations
 
-FUSE is distributed under the GNU General Public License version 3
-(GPL-3.0).
+The evaluation module calculates continuous streamflow and flood
+performance from archived FUSE hydrographs.
 
-FUSE should be cited as:
+Continuous evaluation includes NSE and KGE (2009 formulation).
 
-Clark, M. P., Slater, A. G., Rupp, D. E., Woods, R. A., Vrugt, J. A.,
-Gupta, H. V., Wagener, T., and Hay, L. E.:
-Framework for Understanding Structural Errors (FUSE): A modular framework
-to diagnose differences between hydrological models,
-Water Resources Research, 44, W00B02, 2008.
+Flood evaluation includes:
 
-https://doi.org/10.1029/2007WR006735
+- Relative error in peak discharge.
+- Relative error in event volume.
+- Timing difference between simulated and observed peaks.
+
+Metrics are evaluated separately over the temporal calibration and
+evaluation periods.
+
+Daily simulations are evaluated against the original daily
+CAMELS-NZ observations.
+
+Hourly simulations are evaluated at their native resolution and
+also after aggregation to daily discharge, using the original
+daily observations.
+
+The main daily/hourly comparison is therefore performed at a
+common daily resolution. Native hourly evaluation provides
+complementary information.
+
+Observed flood events are not redetected during model evaluation.
+The reviewed hourly catalogue and its daily evaluation units are
+used throughout.
+
+The evaluator operates on existing hydrographs and never runs FUSE.
+
+Documentation:
+
+- [FUSE evaluation](scripts/05_evaluation/README.md)
+
+### 6. Analyze model performance
+
+The analysis stage brings together evaluation results from the
+different experiments, catchments and methods.
+
+Its principal objectives are to:
+
+- Verify the coverage and provenance of evaluation results.
+- Compare methods on consistent catchment populations.
+- Match daily and hourly simulations on common valid calendar days
+  when comparing continuous performance.
+- Match flood evaluations using the same valid daily flood units.
+- Summarize differences between emulators, spatial strategies and
+  local calibration.
+
+Continuous metrics may require recalculation on common daily
+observations to ensure strictly paired comparisons.
+
+Flood metrics already computed by the evaluation module are reused
+rather than independently recalculated.
+
+This analysis module is being structured around these requirements.
+Earlier experimental analysis scripts are retained under
+`scripts/06_analysis/legacy/` for reference.
+
+## Scientific comparison principles
+
+### Daily versus hourly
+
+The primary comparison uses daily discharge for both model
+resolutions:
+
+- Native daily FUSE simulations.
+- Hourly FUSE simulations aggregated to complete calendar days.
+
+Both are assessed against the original CAMELS-NZ daily observations.
+
+The same calendar days must be used when drawing paired conclusions
+about continuous performance.
+
+### Flood events
+
+The reviewed observed flood catalogue defines the events.
+
+Daily comparisons use the same observed daily flood units across
+methods, with explicit checks for valid and complete evaluation
+windows.
+
+Peak magnitude, event volume and peak timing are assessed using the
+metrics produced by the evaluation module.
+
+Native hourly flood performance is examined separately.
+
+### Spatial generalization
+
+Emulator predictions are evaluated on the appropriate test basins
+for each spatial strategy.
+
+Results from different folds must be combined without duplicating
+catchments within a method.
+
+Local calibration provides a basin-specific reference rather than
+a spatially regionalized prediction.
+
+### Reproducibility
+
+The workflow uses explicit experiment configurations, validated
+spatial partitions and archived simulation metadata.
+
+Individual modules provide validation or check modes where
+appropriate. Existing scientific results are not silently replaced.
+
+For execution instructions, required software and output details,
+consult the README of the relevant module.
+
+## Figures and manuscript outputs
+
+Scientific analysis tables are kept separate from presentation and
+plotting code.
+
+Manuscript figures and supplementary visualizations will be
+developed in a dedicated plotting stage after the analysis
+requirements and results are established.
