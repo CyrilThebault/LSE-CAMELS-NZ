@@ -31,12 +31,20 @@ validation procedures.
 | `scripts/05_evaluation/` | Evaluation of archived FUSE hydrographs |
 | `scripts/06_analysis/` | Scientific analysis and comparison of evaluation results |
 
-Daily and hourly experiments use separate configurations:
+The scientific execution scripts currently use resolution-specific
+configurations:
 
 - `config/experiment_daily.R`
 - `config/experiment_hourly.R`
 
-Their inputs and results are organized by temporal resolution.
+`config/experiment.R` defines a unified campaign description covering both
+timesteps, spatial strategies and emulator methods. It is used by the
+read-only campaign planner (`00_plan_LSE_campaign.R`), not as a direct
+replacement for the resolution-specific configurations consumed by the
+existing simulation launchers. The shared `resolve_workflow_config()` helper
+can derive a timestep-specific configuration from this campaign definition.
+
+Inputs and results remain organized by temporal resolution.
 
 ## Workflow overview
 
@@ -86,17 +94,36 @@ Documentation:
 
 - [Spatial experiment splits](scripts/03_experiments/README.md)
 
+The read-only campaign planner checks configured folds and reports whether
+partitions are missing, inconsistent, empty or already protected by existing
+artifacts. It does not create partitions, verify every model or candidate
+output, start simulations, or submit jobs. From the repository root:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+Rscript scripts/04_simulations/emulator/00_plan_LSE_campaign.R \
+  --dry-run --timestep daily --split kfold --fold fold_01
+```
+
+See the [emulator module README](scripts/04_simulations/emulator/README.md)
+for additional planner options and execution prerequisites.
+
 ### 4. Produce archived FUSE simulations
 
 Two simulation branches are available.
 
 **Large-Sample Emulators**
 
-Emulators are trained using the initial FUSE database and refined
-through successive training and candidate-evaluation steps.
+Emulators (`RF`, `GBMv01`, `GBMv02`) are trained using the initial FUSE
+database and refined through successive training and candidate-evaluation
+steps. The local launcher supports method selection with the `EMULATORS`
+environment variable and optional restart using `--resume`. Restart checks
+are conservative: existing validated outputs are skipped, missing outputs
+may be computed, and inconsistent or partial outputs stop the workflow.
 
 Selected parameter sets are reproduced with FUSE and their
-hydrographs are archived for evaluation.
+hydrographs are archived for evaluation. Reproduction and archiving are
+separate from the local training/GA/FUSE candidate loop.
 
 **Local calibration**
 
@@ -169,7 +196,15 @@ observations to ensure strictly paired comparisons.
 Flood metrics already computed by the evaluation module are reused
 rather than independently recalculated.
 
-This analysis module is being structured around these requirements.
+The analysis module includes `scripts/06_analysis/01_compare_paired_daily.R`,
+a **prototype for one matching pair of emulator evaluations** (same basin,
+method, refinement step, phase and spatial fold). It verifies evaluation
+metadata, recomputes NSE and KGE (2009) over common valid daily dates, and
+pairs the precomputed flood metrics on identical daily flood units. Its
+`--check` option performs validation without writing analysis tables; normal
+output is restricted to `/private/tmp/`. This is not yet a campaign-wide
+aggregation script or a replacement for the evaluation module.
+
 Earlier experimental analysis scripts are retained under
 `scripts/06_analysis/legacy/` for reference.
 
@@ -218,7 +253,14 @@ The workflow uses explicit experiment configurations, validated
 spatial partitions and archived simulation metadata.
 
 Individual modules provide validation or check modes where
-appropriate. Existing scientific results are not silently replaced.
+appropriate. The local emulator pipeline accepts `--resume`, with
+`SKIP / RUN / STOP` decisions at the appropriate model or candidate level.
+Historical combined candidate files are readable but protected against
+modification. Existing scientific results are not silently replaced.
+
+The planner reports partition-level readiness; use each module's own checks
+to establish result-level completeness. Do not assume that a protected fold
+is a fully completed simulation campaign.
 
 For execution instructions, required software and output details,
 consult the README of the relevant module.

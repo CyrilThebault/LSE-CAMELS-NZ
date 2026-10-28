@@ -3,9 +3,13 @@
 This module trains Large-Sample Emulators (LSE), searches the FUSE
 parameter space and evaluates proposed candidates using FUSE.
 
-The same workflow supports daily and hourly experiments. The timestep,
-model structure, emulator methods and refinement settings are defined
-in the experiment configuration.
+The same workflow supports daily and hourly experiments. The execution
+scripts use `config/experiment_daily.R` or `config/experiment_hourly.R` to
+select timestep, model structure and refinement settings. The unified
+`config/experiment.R` describes the broader campaign and is currently used
+by the read-only planner, not directly by the simulation launchers.
+
+Supported emulator methods are `RF`, `GBMv01` and `GBMv02`.
 
 ## Workflow
 
@@ -26,6 +30,8 @@ to emulator training or refinement.
 
 ## Scripts
 
+- `00_plan_LSE_campaign.R`: read-only `--dry-run` inventory and validation
+  of configured spatial experiments; it does not execute the workflow.
 - `01_train_emulator.R`: build the training dataset and fit the
   configured emulators for one refinement step.
 - `02_search_parameter_space.R`: propose FUSE parameter candidates
@@ -38,13 +44,42 @@ to emulator training or refinement.
 ## Running an experiment
 
 Experiment splits, iter0 results and prepared FUSE inputs must already
-be available.
+be available. The planner checks spatial directory structure; it does not
+validate all model, GA or FUSE result files.
+
+### Inspect the campaign without running simulations
+
+From the repository root:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+Rscript scripts/04_simulations/emulator/00_plan_LSE_campaign.R \
+  --dry-run
+```
+
+To inspect one existing k-fold partition and selected methods:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+Rscript scripts/04_simulations/emulator/00_plan_LSE_campaign.R \
+  --dry-run --timestep daily --split kfold --fold fold_01 \
+  --emulator RF,GBMv02
+```
+
+The planner reads `config/experiment.R`, supports `--timestep`, `--split`,
+`--fold` and `--emulator` filters, and requires `--dry-run`. Fold and mode
+statuses distinguish missing partitions, validation failures and validated
+partitions containing existing artifacts (`VALIDATED_PROTECTED`). The mode
+summary also audits coverage across all configured folds, even when one
+fold is selected. A protected folder must not be interpreted as evidence
+that all emulator results are complete.
 
 ### Local
 
 The local launcher requires GNU Parallel.
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 export DIR_MAIN="$PWD"
 export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
 export EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
@@ -53,8 +88,32 @@ export NCORES=4
 bash scripts/04_simulations/emulator/run_LSE_split_local.sh
 ```
 
-For hourly experiments, use `experiment_hourly.R` and the corresponding
-directory under `experiments/hourly/`.
+To select two methods and resume an interrupted local workflow, after
+inspecting the intended fold and its outputs:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+export EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
+export NCORES=4
+export EMULATORS="RF,GBMv02"
+
+bash scripts/04_simulations/emulator/run_LSE_split_local.sh --resume
+```
+
+**These launcher commands execute real training, GA and FUSE work whenever
+required outputs are missing.** Do not use them as read-only validation
+commands on historical campaigns. For hourly experiments, use
+`experiment_hourly.R` and the corresponding directory under
+`experiments/hourly/`.
+
+`EMULATORS` is an optional comma-separated subset of configured methods;
+when unset, all configured emulators are selected. `ZDECISION` and `NREFINE`
+default to the resolution-specific configuration and may be overridden.
+`NCORES` controls local parallel execution. `--resume` is a local launcher
+option passed through to the three scientific scripts; HPC submitter
+support for the flag has not been established by this refactoring.
 
 ### ARC HPC
 
@@ -92,9 +151,10 @@ mode-specific partition rules. If validation fails, no jobs are submitted.
 In particular, incomplete LOO experiments are rejected even if their
 existing fold directories contain valid train/test files.
 
-`ZDECISION` and `NREFINE` default to the configuration values and may
-be overridden using environment variables. The local launcher also
-accepts `NCORES`.
+For HPC, consult the submission scripts and the validated partition
+workflow before launching jobs. These HPC commands submit jobs; they are
+not dry runs. The local `--resume` forwarding tests do not establish that
+HPC submission scripts automatically forward this option.
 
 ## Outputs
 
@@ -104,19 +164,44 @@ Within each experiment split, results are organized under:
 
 - `models/emulator_step_<step>_<emulator>.RData` contains a trained
   emulator for the specified refinement step.
-- `<phase>/<basinID>/candidates_step_<step>.RData` contains proposed
-  parameter candidates and, after FUSE execution, their simulation metrics.
+- `<phase>/<basinID>/candidates_step_<step>_<emulator>.RData` is the
+  current per-emulator candidate file. GA creates it; FUSE evaluation
+  updates that same file with results and provenance.
+- `<phase>/<basinID>/candidates_step_<step>.RData` is the **historical
+  combined format**, containing rows for multiple emulators. It can be
+  read through `read_emulator_candidates()` but is not rewritten by the
+  new GA or FUSE scripts.
 
-Candidate files are shared by the configured emulator methods.
-Parameter search creates the candidate file, and FUSE evaluation
-subsequently updates it with simulated performance.
+The reader rejects an ambiguous combination of historical and individual
+files for the same emulator and step. Individual candidate writes are
+protected by per-file lock directories (`.lock`) and temporary-file
+serialization followed by atomic renaming. Interrupted lock directories
+are not automatically removed: inspect the running job and any partial
+workspace before considering manual cleanup.
 
-Existing model and candidate outputs are protected against accidental
-retraining or repeated evaluation. Completed FUSE candidate results
-are written to a temporary file before replacing the original file.
+### Resuming the local workflow
 
-An interrupted run is not automatically resumed. Existing outputs
-must be inspected before attempting to rerun an incomplete workflow.
+Each scientific script accepts the optional `--resume` flag and an optional
+`--emulator RF,GBMv02` method filter. The wrapper forwards `--resume` to
+training, GA and FUSE candidate evaluation. Without `--resume`, the original
+refusal to overwrite existing outputs is retained.
+
+| Stage | `SKIP` | `RUN` | `STOP` |
+| --- | --- | --- | --- |
+| Training | Existing compatible model, with checked metadata and structure | Model absent | Existing unreadable or inconsistent model |
+| GA | Existing compatible candidate rows in either supported format | Candidate file absent | Invalid, incomplete or ambiguous candidate file |
+| FUSE | Complete candidate evaluation, including a recorded FUSE failure | Unevaluated candidates in an individual file, with no existing method workspace | Missing candidates, partial evaluation, inconsistent provenance, historical unevaluated file or existing workspace |
+
+The checks occur per selected method (and per basin/step for GA and FUSE).
+They do **not** continue halfway through an interrupted candidate loop. A
+failed FUSE run with an explicit, complete failure record can count as
+evaluated; an incomplete file or leftover workspace must be examined
+rather than silently retried. A completed legacy file is skipped in
+`--resume` mode and is never rewritten.
+
+`--resume` may still launch substantial new computations when some files
+are missing. It does not validate full campaign completeness or promise
+bit-for-bit reproduction of outputs created under earlier random seeds.
 
 ## Selected FUSE simulation
 
@@ -126,7 +211,9 @@ refinement step and phase.
 
 It is not selected using the observed FUSE calibration or evaluation KGE.
 
-`04_reproduce_selected_FUSE.R` provides two actions:
+`04_reproduce_selected_FUSE.R` reads either historical combined or
+individual candidate files, retaining the original row index and candidate
+source in reproduction metadata when available. It provides two actions:
 
 - `check`: validate the selected candidate and required inputs without
   executing FUSE.
@@ -142,12 +229,11 @@ and candidate evaluation.
 
 ## Evaluation
 
-Archived simulations are evaluated using:
-
-```text
-Rscript scripts/05_evaluation/02_evaluate_experiment.R \
-  EXPERIMENT_DIR CONFIG_FILE DIR_MAIN
-```
+Archived simulations are evaluated by
+`scripts/05_evaluation/02_evaluate_experiment.R`, using an experiment
+directory, the matching daily/hourly configuration, and the repository
+root. Consult the evaluation module README for a complete command with
+verified paths before launching it.
 
 The evaluator never runs FUSE.
 
