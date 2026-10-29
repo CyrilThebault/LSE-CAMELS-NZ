@@ -29,8 +29,30 @@ module load r/4.4.0
 
 ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:?This script must be submitted as a Slurm job array}"
 
-DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
-CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
+# Scientific workflow arguments are passed directly to sbatch.
+if [[ "$#" -ne 4 || "$3" != "--timestep" ]]; then
+  echo "Usage: sbatch --array=1-N $(basename "$0") <DIR_MAIN> <CONFIG_FILE> --timestep <daily|hourly>" >&2
+  exit 2
+fi
+
+DIR_MAIN="$(cd "$1" && pwd -P)"
+CONFIG_FILE="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
+TIMESTEP="$4"
+
+case "$TIMESTEP" in
+  daily|hourly)
+    ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "Missing configuration: $CONFIG_FILE" >&2
+  exit 2
+fi
+
 
 BASIN_FILE="$DIR_MAIN/config/basins.txt"
 
@@ -57,4 +79,4 @@ echo "Preparing basin: ${BASIN_ID}"
 # CAMELS-NZ preparation
 # ==============================================================================
 
-Rscript "$DIR_MAIN/scripts/01_prepare/01_prepare_CAMELS_NZ.R" "$BASIN_ID" "$CONFIG_FILE" "$DIR_MAIN"
+Rscript "$DIR_MAIN/scripts/01_prepare/01_prepare_CAMELS_NZ.R" "$BASIN_ID" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP"

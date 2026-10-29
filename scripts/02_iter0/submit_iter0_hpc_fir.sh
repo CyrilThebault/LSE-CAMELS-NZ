@@ -2,13 +2,41 @@
 
 set -euo pipefail
 
-if [[ "$#" -ne 2 ]]; then
-  echo "Usage: bash submit_iter0_hpc_fir.sh <DIR_MAIN> <CONFIG_FILE>" >&2
-  exit 1
+usage="Usage: bash submit_iter0_hpc_fir.sh <DIR_MAIN> <CONFIG_FILE> --timestep <daily|hourly> [--zdecision <value>]"
+
+if [[ "$#" -ne 4 && "$#" -ne 6 ]]; then
+  echo "$usage" >&2
+  exit 2
 fi
+
+if [[ "${3:-}" != "--timestep" ]]; then
+  echo "$usage" >&2
+  exit 2
+fi
+
+if [[ "$#" -eq 6 ]]; then
+  if [[ "$5" != "--zdecision" || -z "$6" ]]; then
+    echo "$usage" >&2
+    exit 2
+  fi
+fi
+
+REQUESTED_ZDECISION="${6:-}"
 
 DIR_MAIN="$(cd "$1" && pwd -P)"
 CONFIG_FILE="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
+
+TIMESTEP="$4"
+
+case "$TIMESTEP" in
+  daily|hourly)
+    ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
 
 BASIN_FILE="$DIR_MAIN/config/basins.txt"
 SLURM_SCRIPT="$DIR_MAIN/scripts/02_iter0/run_iter0_hpc_fir.slurm"
@@ -41,11 +69,21 @@ RS
 DECISIONS_FILE="$(mktemp "${TMPDIR:-/tmp}/lse_iter0_decisions.XXXXXXXX")"
 trap 'rm -f "$DECISIONS_FILE"' EXIT
 
-Rscript --vanilla - "$DIR_MAIN" "$CONFIG_FILE" "${ZDECISION:-}" "$DECISIONS_FILE" <<'RS'
+Rscript --vanilla - "$DIR_MAIN" "$CONFIG_FILE" "$REQUESTED_ZDECISION" "$DECISIONS_FILE" "$TIMESTEP" <<'RS'
 args <- commandArgs(trailingOnly = TRUE)
 
 source(file.path(args[1], "scripts/functions/common.R"))
-experiment <- load_workflow_config(args[2])
+if (
+  length(args) != 5L ||
+  !(args[5] %in% c("daily", "hourly"))
+) {
+  stop("Invalid explicit timestep passed to iter0 decision selector")
+}
+
+experiment <- load_workflow_config(
+  args[2],
+  timestep = args[5]
+)
 
 decisions <- as.character(experiment$zDecision)
 
@@ -97,8 +135,9 @@ while IFS= read -r DECISION; do
     sbatch \
       --parsable \
       --array="1-$NBASINS" \
-      --export="ALL,DIR_MAIN=$DIR_MAIN,CONFIG_FILE=$CONFIG_FILE,ZDECISION=$DECISION" \
-      "$SLURM_SCRIPT"
+      "$SLURM_SCRIPT" \
+      "$DIR_MAIN" "$CONFIG_FILE" "$DECISION" \
+      --timestep "$TIMESTEP"
   )"
 
   echo "Submitted job $JOB_ID for zDecision=$DECISION"

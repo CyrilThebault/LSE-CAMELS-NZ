@@ -11,14 +11,15 @@ in [floods/README.md](floods/README.md).
 
 ## 1. Experiment configuration
 
-Each repository clone corresponds to one fixed experiment.
+Each repository clone uses one fixed basin selection and a unified
+experiment configuration supporting both daily and hourly resolutions.
 
 Before running the workflow:
 
 1. Define the selected basins in `config/basins.txt`, with one
    CAMELS-NZ `Station_ID` per line.
-2. Select and configure one experiment file, for example
-   `config/experiment_daily.R` or `config/experiment_hourly.R`.
+2. Review the unified configuration `config/experiment.R`, which
+   supports both daily and hourly experiments.
 3. Review `config/attributes_used.txt`.
 4. Ensure that the CAMELS-NZ source data and the required FUSE files
    are available at the locations specified by the configuration.
@@ -28,17 +29,22 @@ Keep the basin selection and experiment configuration unchanged
 throughout the experiment. Use a separate clone for a different
 experimental setup.
 
-All preparation scripts receive the experiment configuration explicitly.
+The preparation scripts receive the unified experiment configuration and
+a mandatory `--timestep daily|hourly` argument. The commands below use
+`--timestep daily`; substitute `hourly` to prepare hourly inputs.
+Steps 1-4 create or prepare files, and the HPC examples submit real jobs.
+Use Step 5 with `--check` for read-only validation.
 
-From the repository root:
+For a standalone setup from anywhere inside the repository:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
 ```
 
-Replace `experiment_daily.R` with `experiment_hourly.R` when preparing
-an hourly experiment.
+The same configuration file is used for both resolutions; select the
+resolution through the required `--timestep` argument.
 
 ## 2. Preparation steps
 
@@ -57,8 +63,12 @@ The scripts should be run in the following order.
 For a sequential run:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
 Rscript scripts/01_prepare/01_prepare_CAMELS_NZ.R \
-  ALL "$CONFIG_FILE" "$DIR_MAIN"
+  ALL "$CONFIG_FILE" "$DIR_MAIN" --timestep daily
 ```
 
 `ALL` means all basins listed in `config/basins.txt`.
@@ -85,8 +95,13 @@ with interval bounds stored separately.
 The local launcher requires GNU Parallel.
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
 export NCORES=5
-bash scripts/01_prepare/01_prepare_CAMELS_NZ_local.sh
+bash scripts/01_prepare/01_prepare_CAMELS_NZ_local.sh \
+  "$DIR_MAIN" "$CONFIG_FILE" --timestep daily
 ```
 
 Adjust `NCORES` to the available resources.
@@ -96,14 +111,18 @@ Adjust `NCORES` to the available resources.
 Create the Slurm log directory before submission:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
 mkdir -p logs/prepare
 
 NBASINS=$(wc -l < "$DIR_MAIN/config/basins.txt")
 
 sbatch \
   --array=1-"$NBASINS" \
-  --export=ALL,DIR_MAIN="$DIR_MAIN",CONFIG_FILE="$CONFIG_FILE" \
-  scripts/01_prepare/01_prepare_CAMELS_NZ_hpc_arc.slurm
+  scripts/01_prepare/01_prepare_CAMELS_NZ_hpc_arc.slurm \
+    "$DIR_MAIN" "$CONFIG_FILE" --timestep daily
 ```
 
 The ARC launcher loads the required software modules and prepares
@@ -114,14 +133,18 @@ one basin per array task.
 Create the Slurm log directory before submission:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
 mkdir -p logs/prepare
 
 NBASINS=$(wc -l < "$DIR_MAIN/config/basins.txt")
 
 sbatch \
   --array=1-"$NBASINS" \
-  --export=ALL,DIR_MAIN="$DIR_MAIN",CONFIG_FILE="$CONFIG_FILE" \
-  scripts/01_prepare/01_prepare_CAMELS_NZ_hpc_fir.slurm
+  scripts/01_prepare/01_prepare_CAMELS_NZ_hpc_fir.slurm \
+    "$DIR_MAIN" "$CONFIG_FILE" --timestep daily
 ```
 
 The FIR launcher uses its own software-module environment.
@@ -132,13 +155,17 @@ refer to paths accessible from the compute nodes.
 ### Step 2: Prepare FUSE settings
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
 Rscript scripts/01_prepare/02_prepare_FUSE_settings.R \
-  "$CONFIG_FILE" "$DIR_MAIN"
+  "$CONFIG_FILE" "$DIR_MAIN" --timestep daily
 ```
 
 The source FUSE template is defined by `experiment$paths$fuse_template`
-in the selected experiment configuration. In the supplied configurations,
-this path is derived from `ROOT`.
+in the unified experiment configuration. By default, this path is
+derived from `ROOT`.
 
 The template must contain the following files under its `settings/`
 directory:
@@ -159,8 +186,12 @@ subsequent FUSE metadata preparation step.
 ### Step 3: Create FUSE metadata
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
 Rscript scripts/01_prepare/03_create_FUSE_metadata.R \
-  "$CONFIG_FILE" "$DIR_MAIN"
+  "$CONFIG_FILE" "$DIR_MAIN" --timestep daily
 ```
 
 The script constructs the FUSE metadata from the available model
@@ -175,8 +206,12 @@ data/useful_files/fuse_settings_files.RData
 ### Step 4: Create static basin attributes
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
 Rscript scripts/01_prepare/04_create_CAMELS_NZ_attributes.R \
-  "$CONFIG_FILE" "$DIR_MAIN"
+  "$CONFIG_FILE" "$DIR_MAIN" --timestep daily
 ```
 
 The script merges the five CAMELS-NZ static attribute tables using
@@ -199,8 +234,12 @@ data/useful_files/attributes.RData
 For a read-only check:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
 Rscript scripts/01_prepare/05_validate_preparation.R \
-  "$CONFIG_FILE" "$DIR_MAIN" --check
+  "$CONFIG_FILE" "$DIR_MAIN" --timestep daily --check
 ```
 
 The validator checks:
@@ -221,8 +260,12 @@ exit status if preparation validation fails.
 To create the QC reports:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
 Rscript scripts/01_prepare/05_validate_preparation.R \
-  "$CONFIG_FILE" "$DIR_MAIN"
+  "$CONFIG_FILE" "$DIR_MAIN" --timestep daily
 ```
 
 The generated reports are:
@@ -280,4 +323,3 @@ Do not use `--force` routinely for ordinary validation.
 
 - [Main workflow](../../README.md)
 - [Observed flood catalogue and QC](floods/README.md)
-- [Prepared testcase](../../testcase/README.md)

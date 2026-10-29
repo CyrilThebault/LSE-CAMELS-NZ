@@ -13,8 +13,20 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) < 6L) {
-  stop("Usage: Rscript 01_train_emulator.R <experiment_dir> <zDecision> <iStep> <nCores> <config_file> <dirMain> [--emulator RF,GBMv02] [--resume]")
+usage <- paste(
+  "Usage: Rscript 01_train_emulator.R",
+  "<experiment_dir> <zDecision> <iStep> <nCores> <config_file> <dirMain>",
+  "--timestep <daily|hourly> [--emulator RF,GBMv02] [--resume]"
+)
+
+if (length(args) < 8L || !identical(args[7L], "--timestep")) {
+  stop(usage)
+}
+
+workflow_timestep <- args[8L]
+
+if (!(workflow_timestep %in% c("daily", "hourly"))) {
+  stop("Invalid --timestep: ", workflow_timestep, ". Expected daily or hourly")
 }
 
 experiment_dir <- normalizePath(args[1], mustWork = TRUE)
@@ -46,10 +58,13 @@ suppressPackageStartupMessages({
 # Configuration and input data
 # ==============================================================================
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_workflow_config(
+  config_file,
+  timestep = workflow_timestep
+)
 
 # Select methods without modifying the campaign configuration.
-optional_args <- if (length(args) > 6L) args[-seq_len(6L)] else character()
+optional_args <- if (length(args) > 8L) args[-seq_len(8L)] else character()
 
 resume <- "--resume" %in% optional_args
 

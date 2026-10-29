@@ -82,7 +82,7 @@ source(file.path(dirMain, "scripts/functions/basins.R"))
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/floods.R"))
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_observed_flood_config(config_file)
 
 flood_metadata <- read.csv(
   file.path(

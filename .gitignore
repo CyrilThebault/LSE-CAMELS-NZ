@@ -8,3 +8,10 @@ experiments/
 outputs/
 plots/
 logs/
+
+# Work-in-progress modules kept locally
+/scripts/06_analysis/
+/testcase/
+
+# Local plotting helpers used by WIP analysis
+/scripts/functions/plotting.R

@@ -12,6 +12,23 @@
 
 set -euo pipefail
 
+# Explicit timestep for the Slurm array task.
+if [[ $# -ne 2 || "$1" != "--timestep" ]]; then
+  echo "Usage: run_local_calibration_hpc_<arc|fir>.slurm --timestep <daily|hourly>" >&2
+  exit 2
+fi
+
+TIMESTEP="$2"
+
+case "$TIMESTEP" in
+  daily|hourly) ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
+
 # FIR software environment
 module --force purge
 module load StdEnv/2023
@@ -33,6 +50,7 @@ export OMP_THREAD_LIMIT=1
 # Configuration
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
 CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
+
 EXPERIMENT_DIR="${EXPERIMENT_DIR:?Set EXPERIMENT_DIR}"
 BASIN_FILE="${BASIN_FILE:-$DIR_MAIN/config/basins.txt}"
 
@@ -107,9 +125,11 @@ ZDECISION="$(
   Rscript -e '
     args <- commandArgs(trailingOnly = TRUE)
     source(file.path(args[2], "scripts/functions/common.R"))
-    experiment <- load_workflow_config(args[1])
+    experiment <- load_workflow_config(
+      args[1], timestep = args[3]
+    )
     cat(experiment$zDecision)
-  ' "$CONFIG_FILE" "$DIR_MAIN"
+  ' "$CONFIG_FILE" "$DIR_MAIN" "$TIMESTEP"
 )"
 
 
@@ -186,6 +206,7 @@ Rscript \
   run \
   "$WORK" \
   "$CONFIG_FILE" \
-  "$DIR_MAIN"
+  "$DIR_MAIN" \
+  --timestep "$TIMESTEP"
 
 echo "SCE ARRAY TASK COMPLETE: $BASIN_ID"

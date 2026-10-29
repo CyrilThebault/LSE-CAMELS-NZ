@@ -12,8 +12,30 @@ export MKL_NUM_THREADS=1
 # Workflow configuration
 # ==============================================================================
 
-DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
-CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
+# All workflow inputs are explicit command-line arguments.
+if [[ "$#" -ne 4 || "$3" != "--timestep" ]]; then
+  echo "Usage: bash $(basename "$0") <DIR_MAIN> <CONFIG_FILE> --timestep <daily|hourly>" >&2
+  exit 2
+fi
+
+DIR_MAIN="$(cd "$1" && pwd -P)"
+CONFIG_FILE="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
+TIMESTEP="$4"
+
+case "$TIMESTEP" in
+  daily|hourly)
+    ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "Missing configuration: $CONFIG_FILE" >&2
+  exit 2
+fi
+
 
 NCORES="${NCORES:-4}"
 
@@ -30,4 +52,4 @@ fi
 # Each basin is prepared independently and writes its own forcing files.
 # ==============================================================================
 
-parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/01_prepare/01_prepare_CAMELS_NZ.R" {} "$CONFIG_FILE" "$DIR_MAIN" :::: "$BASIN_FILE"
+parallel -j "$NCORES" --line-buffer --tag Rscript "$DIR_MAIN/scripts/01_prepare/01_prepare_CAMELS_NZ.R" {} "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" :::: "$BASIN_FILE"

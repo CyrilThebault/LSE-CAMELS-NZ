@@ -36,19 +36,20 @@ if (!file.exists(sim_file) || !file.exists(meta_file)) {
 meta <- readRDS(meta_file)
 
 required_meta <- c(
-  "experiment_dir", "config_file", "basinID", "zDecision"
+  "experiment_dir", "config_file", "timestep",
+  "basinID", "zDecision", "method_type", "method"
 )
 
 stopifnot(all(required_meta %in% names(meta)))
 
-# Legacy emulator metadata remain supported.
-method_type <- if (is.null(meta$method_type)) {
-  "emulator"
-} else {
-  meta$method_type
-}
+method_type <- meta$method_type
 
-stopifnot(method_type %in% c("emulator", "localcalib"))
+stopifnot(
+  is.character(method_type),
+  length(method_type) == 1L,
+  !is.na(method_type),
+  method_type %in% c("emulator", "localcalib")
+)
 
 if (method_type == "emulator") {
 
@@ -60,11 +61,22 @@ if (method_type == "emulator") {
     meta$modelStep >= 0
   )
 
-  method <- if (is.null(meta$method)) {
-    meta$emulator
-  } else {
-    meta$method
-  }
+  method <- meta$method
+
+  stopifnot(
+    all(c(
+      "emulator", "candidate_format", "candidate_file"
+    ) %in% names(meta)),
+    identical(method, meta$emulator),
+    is.character(meta$candidate_format),
+    length(meta$candidate_format) == 1L,
+    !is.na(meta$candidate_format),
+    nzchar(meta$candidate_format),
+    is.character(meta$candidate_file),
+    length(meta$candidate_file) == 1L,
+    !is.na(meta$candidate_file),
+    nzchar(meta$candidate_file)
+  )
 
   relative_path <- file.path(
     paste0("zDecision_", meta$zDecision),
@@ -112,7 +124,11 @@ if (!identical(
   stop("Hydrograph directory does not match saved metadata")
 }
 
-experiment <- load_workflow_config(meta$config_file)
+experiment <- load_workflow_config(
+  meta$config_file,
+  timestep = meta$timestep
+)
+stopifnot(identical(experiment$timestep, meta$timestep))
 stopifnot(experiment$timestep %in% c("hourly", "daily"))
 
 basinID <- as.character(meta$basinID)
@@ -300,7 +316,8 @@ if (experiment$timestep == "hourly") {
 if (experiment$timestep == "hourly") {
 
   daily_config <- load_workflow_config(
-    file.path(dirMain, "config", "experiment_daily.R")
+    meta$config_file,
+    timestep = "daily"
   )
 
   stopifnot(

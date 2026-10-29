@@ -3,11 +3,55 @@
 # Stop immediately on errors, unset variables and failed pipeline commands.
 set -euo pipefail
 
-# Optional workflow resume.
-if [[ $# -gt 1 ]] || { [[ $# -eq 1 ]] && [[ "$1" != "--resume" ]]; }; then
-  echo "Usage: bash run_LSE_split_local.sh [--resume]" >&2
+# Explicit workflow options.
+usage() {
+  echo "Usage: bash run_LSE_split_local.sh --timestep <daily|hourly> [--zdecision <value>] [--resume]" >&2
   exit 2
+}
+
+if [[ $# -lt 2 || "$1" != "--timestep" ]]; then
+  usage
 fi
+
+TIMESTEP="$2"
+shift 2
+
+case "$TIMESTEP" in
+  daily|hourly) ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
+ZDECISION_OVERRIDE=""
+RESUME_ARGS=()
+
+while (( $# > 0 )); do
+  case "$1" in
+    --zdecision)
+      if (( $# < 2 )) || [[ -n "$ZDECISION_OVERRIDE" ]]; then
+        usage
+      fi
+      if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+        echo "Invalid --zdecision: expected an integer" >&2
+        exit 2
+      fi
+      ZDECISION_OVERRIDE="$2"
+      shift 2
+      ;;
+    --resume)
+      if (( ${#RESUME_ARGS[@]} > 0 )); then
+        usage
+      fi
+      RESUME_ARGS=(--resume)
+      shift
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
 
 
 # Basin-level jobs are parallelised with GNU Parallel, so keep numerical
@@ -24,13 +68,16 @@ export OMP_THREAD_LIMIT=1
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
 CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
+
 EXPERIMENT_DIR="${EXPERIMENT_DIR:?Set EXPERIMENT_DIR to one fold directory}"
 
 CONFIG_VALUES="$(
-  Rscript - "$DIR_MAIN" "$CONFIG_FILE" <<'RS'
+  Rscript - "$DIR_MAIN" "$CONFIG_FILE" "$TIMESTEP" <<'RS'
 args <- commandArgs(trailingOnly = TRUE)
 source(file.path(args[1], "scripts/functions/common.R"))
-experiment <- load_workflow_config(args[2])
+experiment <- load_workflow_config(
+  args[2], timestep = args[3]
+)
 configured <- experiment$emulators
 requested <- Sys.getenv("EMULATORS", unset = "")
 
@@ -62,7 +109,7 @@ RS
 
 read -r CONFIG_ZDECISION CONFIG_NREFINE SELECTED_EMULATORS <<< "$CONFIG_VALUES"
 
-ZDECISION="${ZDECISION:-$CONFIG_ZDECISION}"
+ZDECISION="${ZDECISION_OVERRIDE:-$CONFIG_ZDECISION}"
 NREFINE="${NREFINE:-$CONFIG_NREFINE}"
 
 NCORES="${NCORES:-4}"
@@ -83,11 +130,11 @@ TMP_BASE=$(mktemp -d "${TMPDIR:-/tmp}/lse.XXXXXXXX")
 # used only for evaluation and never feed back into model training.
 # ==============================================================================
 
-Rscript "$DIR_MAIN/scripts/04_simulations/emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" 0 "$NCORES" "$CONFIG_FILE" "$DIR_MAIN" --emulator "$SELECTED_EMULATORS" "$@"
+Rscript "$DIR_MAIN/scripts/04_simulations/emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" 0 "$NCORES" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" --emulator "$SELECTED_EMULATORS" "${RESUME_ARGS[@]}"
 
-parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$CONFIG_FILE" "$DIR_MAIN" --emulator "$SELECTED_EMULATORS" "$@" :::: "$EXPERIMENT_DIR/test_basins.txt"
+parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" --emulator "$SELECTED_EMULATORS" "${RESUME_ARGS[@]}" :::: "$EXPERIMENT_DIR/test_basins.txt"
 
-parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$TMP_BASE/test_step0_{}" "$CONFIG_FILE" "$DIR_MAIN" --emulator "$SELECTED_EMULATORS" "$@" :::: "$EXPERIMENT_DIR/test_basins.txt"
+parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" 0 test "$TMP_BASE/test_step0_{}" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" --emulator "$SELECTED_EMULATORS" "${RESUME_ARGS[@]}" :::: "$EXPERIMENT_DIR/test_basins.txt"
 
 # ==============================================================================
 # Iterative refinement
@@ -99,17 +146,17 @@ parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simul
 
 for ((step = 0; step < NREFINE; step++)); do
 
-  parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$step" train "$CONFIG_FILE" "$DIR_MAIN" --emulator "$SELECTED_EMULATORS" "$@" :::: "$EXPERIMENT_DIR/train_basins.txt"
+  parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$step" train "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" --emulator "$SELECTED_EMULATORS" "${RESUME_ARGS[@]}" :::: "$EXPERIMENT_DIR/train_basins.txt"
 
-  parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$step" train "$TMP_BASE/train_step${step}_{}" "$CONFIG_FILE" "$DIR_MAIN" --emulator "$SELECTED_EMULATORS" "$@" :::: "$EXPERIMENT_DIR/train_basins.txt"
+  parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$step" train "$TMP_BASE/train_step${step}_{}" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" --emulator "$SELECTED_EMULATORS" "${RESUME_ARGS[@]}" :::: "$EXPERIMENT_DIR/train_basins.txt"
 
   next=$((step + 1))
 
-  Rscript "$DIR_MAIN/scripts/04_simulations/emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" "$next" "$NCORES" "$CONFIG_FILE" "$DIR_MAIN" --emulator "$SELECTED_EMULATORS" "$@"
+  Rscript "$DIR_MAIN/scripts/04_simulations/emulator/01_train_emulator.R" "$EXPERIMENT_DIR" "$ZDECISION" "$next" "$NCORES" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" --emulator "$SELECTED_EMULATORS" "${RESUME_ARGS[@]}"
 
   # Evaluate the newly refined emulator on test basins.
-  parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$CONFIG_FILE" "$DIR_MAIN" --emulator "$SELECTED_EMULATORS" "$@" :::: "$EXPERIMENT_DIR/test_basins.txt"
+  parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/02_search_parameter_space.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" --emulator "$SELECTED_EMULATORS" "${RESUME_ARGS[@]}" :::: "$EXPERIMENT_DIR/test_basins.txt"
 
-  parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$TMP_BASE/test_step${next}_{}" "$CONFIG_FILE" "$DIR_MAIN" --emulator "$SELECTED_EMULATORS" "$@" :::: "$EXPERIMENT_DIR/test_basins.txt"
+  parallel -j "$NCORES" --line-buffer --tag -- Rscript "$DIR_MAIN/scripts/04_simulations/emulator/03_run_FUSE_candidates.R" {} "$EXPERIMENT_DIR" "$ZDECISION" "$next" test "$TMP_BASE/test_step${next}_{}" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" --emulator "$SELECTED_EMULATORS" "${RESUME_ARGS[@]}" :::: "$EXPERIMENT_DIR/test_basins.txt"
 
 done

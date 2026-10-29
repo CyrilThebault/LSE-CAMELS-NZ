@@ -20,7 +20,7 @@ validation procedures.
 
 | Directory | Purpose |
 | --- | --- |
-| `config/` | Experiment configurations and basin selection |
+| `config/` | Unified campaign configuration and basin selection |
 | `data/` | Hydrological inputs, catchment information and observed flood data |
 | `outputs/` | Initial simulation results and supporting outputs |
 | `experiments/` | Spatial experiments, archived simulations and evaluations |
@@ -29,20 +29,23 @@ validation procedures.
 | `scripts/03_experiments/` | Spatial experiment partitions |
 | `scripts/04_simulations/` | Emulator simulations and local calibration |
 | `scripts/05_evaluation/` | Evaluation of archived FUSE hydrographs |
-| `scripts/06_analysis/` | Scientific analysis and comparison of evaluation results |
 
-The scientific execution scripts currently use resolution-specific
-configurations:
+The workflow uses the unified `config/experiment.R` configuration for
+daily and hourly experiments, spatial strategies and emulator methods.
 
-- `config/experiment_daily.R`
-- `config/experiment_hourly.R`
+Preparation, iter0, spatial experiment creation, simulation launchers and
+campaign evaluation select the required resolution explicitly with
+`--timestep daily` or `--timestep hourly`.
 
-`config/experiment.R` defines a unified campaign description covering both
-timesteps, spatial strategies and emulator methods. It is used by the
-read-only campaign planner (`00_plan_LSE_campaign.R`), not as a direct
-replacement for the resolution-specific configurations consumed by the
-existing simulation launchers. The shared `resolve_workflow_config()` helper
-can derive a timestep-specific configuration from this campaign definition.
+The read-only campaign planner also uses the unified configuration.
+`load_workflow_config()` resolves it for the selected timestep.
+
+Two workflows obtain their resolution differently:
+
+- Individual archived FUSE evaluation reads the timestep from simulation
+  metadata.
+- The canonical observed flood catalogue always uses hourly observations
+  through `load_observed_flood_config()` and does not accept `--timestep`.
 
 Inputs and results remain organized by temporal resolution.
 
@@ -174,39 +177,6 @@ The evaluator operates on existing hydrographs and never runs FUSE.
 Documentation:
 
 - [FUSE evaluation](scripts/05_evaluation/README.md)
-
-### 6. Analyze model performance
-
-The analysis stage brings together evaluation results from the
-different experiments, catchments and methods.
-
-Its principal objectives are to:
-
-- Verify the coverage and provenance of evaluation results.
-- Compare methods on consistent catchment populations.
-- Match daily and hourly simulations on common valid calendar days
-  when comparing continuous performance.
-- Match flood evaluations using the same valid daily flood units.
-- Summarize differences between emulators, spatial strategies and
-  local calibration.
-
-Continuous metrics may require recalculation on common daily
-observations to ensure strictly paired comparisons.
-
-Flood metrics already computed by the evaluation module are reused
-rather than independently recalculated.
-
-The analysis module includes `scripts/06_analysis/01_compare_paired_daily.R`,
-a **prototype for one matching pair of emulator evaluations** (same basin,
-method, refinement step, phase and spatial fold). It verifies evaluation
-metadata, recomputes NSE and KGE (2009) over common valid daily dates, and
-pairs the precomputed flood metrics on identical daily flood units. Its
-`--check` option performs validation without writing analysis tables; normal
-output is restricted to `/private/tmp/`. This is not yet a campaign-wide
-aggregation script or a replacement for the evaluation module.
-
-Earlier experimental analysis scripts are retained under
-`scripts/06_analysis/legacy/` for reference.
 
 ## Scientific comparison principles
 

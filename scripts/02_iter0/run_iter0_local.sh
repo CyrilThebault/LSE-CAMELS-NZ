@@ -12,8 +12,45 @@ export MKL_NUM_THREADS=1
 # Workflow configuration
 # ==============================================================================
 
-DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
-CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
+usage="Usage: bash run_iter0_local.sh <DIR_MAIN> <CONFIG_FILE> --timestep <daily|hourly> [--zdecision <value>]"
+
+if [[ "$#" -ne 4 && "$#" -ne 6 ]]; then
+  echo "$usage" >&2
+  exit 2
+fi
+
+if [[ "${3:-}" != "--timestep" ]]; then
+  echo "$usage" >&2
+  exit 2
+fi
+
+if [[ "$#" -eq 6 ]]; then
+  if [[ "$5" != "--zdecision" || -z "$6" ]]; then
+    echo "$usage" >&2
+    exit 2
+  fi
+fi
+
+REQUESTED_ZDECISION="${6:-}"
+
+DIR_MAIN="$(cd "$1" && pwd -P)"
+CONFIG_FILE="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
+TIMESTEP="$4"
+
+case "$TIMESTEP" in
+  daily|hourly)
+    ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "Missing configuration: $CONFIG_FILE" >&2
+  exit 2
+fi
+
 
 NCORES="${NCORES:-4}"
 
@@ -46,10 +83,22 @@ DECISIONS_FILE="$TMP_BASE/zdecisions.txt"
 Rscript --vanilla -e '
   args <- commandArgs(trailingOnly = TRUE)
 
-  env <- new.env(parent = globalenv())
-  sys.source(args[1], envir = env)
+  source(file.path(args[4], "scripts/functions/common.R"))
 
-  decisions <- as.character(env$experiment$zDecision)
+  if (
+    length(args) != 5L ||
+    !(args[5] %in% c("daily", "hourly"))
+  ) {
+    stop("Invalid explicit timestep passed to iter0 decision selector")
+  }
+
+  experiment <- load_workflow_config(
+    args[1],
+    timestep = args[5]
+  )
+
+
+  decisions <- as.character(experiment$zDecision)
 
   if (
     !length(decisions) ||
@@ -80,7 +129,7 @@ Rscript --vanilla -e '
 
   writeLines(decisions, args[3])
   cat("Selected zDecisions:", paste(decisions, collapse = ", "), "\n")
-' "$CONFIG_FILE" "${ZDECISION:-}" "$DECISIONS_FILE"
+' "$CONFIG_FILE" "$REQUESTED_ZDECISION" "$DECISIONS_FILE" "$DIR_MAIN" "$TIMESTEP"
 
 # ==============================================================================
 # Initial FUSE ensemble
@@ -91,6 +140,6 @@ Rscript --vanilla -e '
 
 parallel -j "$NCORES" --line-buffer --tag \
   Rscript "$DIR_MAIN/scripts/02_iter0/01_run_iter0.R" \
-  {1} {2} "$TMP_BASE/{2}/{1}" "$CONFIG_FILE" "$DIR_MAIN" \
+  {1} {2} "$TMP_BASE/{2}/{1}" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP" \
   :::: "$BASINS_FILE" \
   :::: "$DECISIONS_FILE"

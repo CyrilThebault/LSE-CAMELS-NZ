@@ -14,6 +14,23 @@ export OMP_THREAD_LIMIT=1
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
 CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
+
+# Explicit temporal resolution for the local calibration campaign.
+if [[ $# -ne 2 || "$1" != "--timestep" ]]; then
+  echo "Usage: bash run_local_calibration_local.sh --timestep <daily|hourly>" >&2
+  exit 2
+fi
+
+TIMESTEP="$2"
+
+case "$TIMESTEP" in
+  daily|hourly) ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
 EXPERIMENT_DIR="${EXPERIMENT_DIR:?Set EXPERIMENT_DIR}"
 
 BASIN_FILE="${BASIN_FILE:-$DIR_MAIN/config/basins.txt}"
@@ -40,9 +57,11 @@ settings="$(
   Rscript -e '
     args <- commandArgs(trailingOnly = TRUE)
     source(file.path(args[2], "scripts/functions/common.R"))
-    experiment <- load_workflow_config(args[1])
+    experiment <- load_workflow_config(
+      args[1], timestep = args[3]
+    )
     cat(experiment$timestep, experiment$zDecision)
-  ' "$CONFIG_FILE" "$DIR_MAIN"
+  ' "$CONFIG_FILE" "$DIR_MAIN" "$TIMESTEP"
 )"
 
 read -r TIMESTEP ZDECISION <<< "$settings"
@@ -205,7 +224,8 @@ printf '%s\n' "${pending[@]}" |
       run \
       "$TMP_BASE/{}/fuse_workspace" \
       "$CONFIG_FILE" \
-      "$DIR_MAIN"
+      "$DIR_MAIN" \
+      --timestep "$TIMESTEP"
 
 echo
 echo "LOCAL CALIBRATION CAMPAIGN COMPLETE"

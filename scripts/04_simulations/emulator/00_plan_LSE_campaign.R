@@ -46,7 +46,8 @@ source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
 campaign <- load_workflow_config(
-  file.path(dirMain, "config/experiment.R")
+  file.path(dirMain, "config/experiment.R"),
+  mode = "campaign"
 )
 
 select_values <- function(configured, requested, label) {

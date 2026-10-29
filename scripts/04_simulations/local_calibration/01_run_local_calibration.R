@@ -12,11 +12,21 @@ main <- function() {
 
   args <- commandArgs(trailingOnly = TRUE)
 
-  if (length(args) != 6L) {
+  if (length(args) != 8L || !identical(args[7L], "--timestep")) {
     stop(
       "Usage: Rscript 01_run_local_calibration.R ",
       "<basinID> <experiment_dir> ",
-      "<archive|run> <work_dir> <config_file> <dirMain>"
+      "<archive|run> <work_dir> <config_file> <dirMain> ",
+      "--timestep <daily|hourly>"
+    )
+  }
+
+  workflow_timestep <- args[8L]
+
+  if (!(workflow_timestep %in% c("daily", "hourly"))) {
+    stop(
+      "Invalid --timestep: ", workflow_timestep,
+      ". Expected daily or hourly"
     )
   }
 
@@ -35,7 +45,10 @@ main <- function() {
   source(file.path(dirMain, "scripts/functions/common.R"))
   source(file.path(dirMain, "scripts/functions/fuse.R"))
 
-  experiment <- load_workflow_config(config_file)
+  experiment <- load_workflow_config(
+    config_file,
+    timestep = workflow_timestep
+  )
   time_info <- get_timestep_info(experiment)
 
   zDecision <- as.character(experiment$zDecision)

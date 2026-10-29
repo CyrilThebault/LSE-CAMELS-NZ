@@ -21,22 +21,55 @@ module load r/4.4.1
 # Example:
 #   bash submit_LSE_experiment_hpc_arc.sh \
 #     /work/comphyd_lab/users/cyril.thebault/ESNZ/02_DATA/LSE-CAMELS-NZ \
-#     /work/comphyd_lab/users/cyril.thebault/ESNZ/02_DATA/LSE-CAMELS-NZ/config/experiment_hourly.R \
-#     kfold
+#     /work/comphyd_lab/users/cyril.thebault/ESNZ/02_DATA/LSE-CAMELS-NZ/config/experiment.R \
+#     kfold --timestep hourly
 #
-# Optional environment overrides:
-#   ZDECISION=126 NREFINE=2 bash submit_LSE_experiment_hpc_arc.sh \
-#     <DIR_MAIN> <CONFIG_FILE> <experiment>
+# Optional environment override for refinements:
+#   NREFINE=2 bash submit_LSE_experiment_hpc_arc.sh \
+#     <DIR_MAIN> <CONFIG_FILE> <experiment> --timestep hourly --zdecision 126
 # ==============================================================================
 
-if [ "$#" -ne 3 ]; then
-  echo "Usage: bash submit_LSE_experiment_hpc_arc.sh <DIR_MAIN> <CONFIG_FILE> <experiment>"
-  echo "Example: bash submit_LSE_experiment_hpc_arc.sh /path/to/LSE-CAMELS-NZ /path/to/LSE-CAMELS-NZ/config/experiment_hourly.R kfold"
-  exit 1
+usage() {
+  echo "Usage: bash submit_LSE_experiment_hpc_arc.sh <DIR_MAIN> <CONFIG_FILE> <experiment> --timestep <daily|hourly> [--zdecision <value>]" >&2
+  exit 2
+}
+
+if [[ $# -ne 5 && $# -ne 7 ]]; then
+  usage
+fi
+
+if [[ "$4" != "--timestep" ]]; then
+  usage
+fi
+
+TIMESTEP="$5"
+
+case "$TIMESTEP" in
+  daily|hourly) ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
+ZDECISION_OVERRIDE=""
+
+if [[ $# -eq 7 ]]; then
+  if [[ "$6" != "--zdecision" ]]; then
+    usage
+  fi
+
+  if [[ ! "$7" =~ ^[0-9]+$ ]]; then
+    echo "Invalid --zdecision: expected an integer" >&2
+    exit 2
+  fi
+
+  ZDECISION_OVERRIDE="$7"
 fi
 
 DIR_MAIN="$(cd "$1" && pwd)"
 CONFIG_FILE="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+
 EXPERIMENT="$3"
 
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -58,10 +91,12 @@ fi
 # ==============================================================================
 
 CONFIG_VALUES="$(
-  Rscript - "$DIR_MAIN" "$CONFIG_FILE" <<'RS'
+  Rscript - "$DIR_MAIN" "$CONFIG_FILE" "$TIMESTEP" <<'RS'
 args <- commandArgs(trailingOnly = TRUE)
 source(file.path(args[1], "scripts/functions/common.R"))
-experiment <- load_workflow_config(args[2])
+experiment <- load_workflow_config(
+  args[2], timestep = args[3]
+)
 cat(
   experiment$timestep,
   experiment$zDecision,
@@ -72,7 +107,7 @@ RS
 
 read -r TIMESTEP CONFIG_ZDECISION CONFIG_NREFINE <<< "$CONFIG_VALUES"
 
-ZDECISION="${ZDECISION:-$CONFIG_ZDECISION}"
+ZDECISION="${ZDECISION_OVERRIDE:-$CONFIG_ZDECISION}"
 NREFINE="${NREFINE:-$CONFIG_NREFINE}"
 
 EXPERIMENT_ROOT="$DIR_MAIN/experiments/$TIMESTEP/$EXPERIMENT"
@@ -131,7 +166,7 @@ if [ ! -f "$VALIDATOR" ]; then
   exit 1
 fi
 
-Rscript "$VALIDATOR" "$EXPERIMENT" "$CONFIG_FILE" "$DIR_MAIN"
+Rscript "$VALIDATOR" "$EXPERIMENT" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP"
 
 echo "Experiment splits validated successfully."
 echo
@@ -144,8 +179,8 @@ for EXPERIMENT_DIR in "${folds[@]}"; do
 
   job_id=$(
     sbatch \
-      --export=ALL,DIR_MAIN="$DIR_MAIN",CONFIG_FILE="$CONFIG_FILE",EXPERIMENT_DIR="$EXPERIMENT_DIR",ZDECISION="$ZDECISION",NREFINE="$NREFINE" \
-      "$SLURM_SCRIPT" \
+      --export=ALL,DIR_MAIN="$DIR_MAIN",CONFIG_FILE="$CONFIG_FILE",EXPERIMENT_DIR="$EXPERIMENT_DIR",NREFINE="$NREFINE" \
+      "$SLURM_SCRIPT" --timestep "$TIMESTEP" --zdecision "$ZDECISION" \
       | awk '{print $4}'
   )
 

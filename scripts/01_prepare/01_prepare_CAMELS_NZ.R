@@ -13,12 +13,27 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
+# Required explicit scientific timestep; no environment fallback.
+if (
+  !(length(args) %in% c(5L, 6L)) ||
+  !identical(args[length(args) - 1L], "--timestep")
+) {
+  stop(
+    "Usage: Rscript 01_prepare_CAMELS_NZ.R ",
+    "<basinID|ALL> <config_file> <dirMain> ",
+    "[--force] --timestep <daily|hourly>"
+  )
+}
+
+timestep <- args[length(args)]
+args <- head(args, -2L)
+
 if (
   length(args) < 3L ||
   length(args) > 4L ||
   (length(args) == 4L && args[4] != "--force")
 ) {
-  stop("Usage: Rscript 01_prepare_CAMELS_NZ.R <basinID|ALL> <config_file> <dirMain> [--force]")
+  stop("Usage: Rscript 01_prepare_CAMELS_NZ.R <basinID|ALL> <config_file> <dirMain> [--force] --timestep <daily|hourly>")
 }
 
 force <- length(args) == 4L
@@ -30,7 +45,10 @@ dirMain <- normalizePath(args[3], mustWork = TRUE)
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_workflow_config(
+  config_file,
+  timestep = timestep
+)
 time_info <- get_timestep_info(experiment)
 paths <- project_paths(dirMain, experiment)
 suppressPackageStartupMessages(library(ncdf4))

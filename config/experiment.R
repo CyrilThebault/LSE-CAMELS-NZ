@@ -1,5 +1,5 @@
 # Central configuration for the lumped CAMELS-NZ LSE workflow.
-# Used by the campaign planner; scientific execution uses timestep-specific configurations.
+# Shared by the campaign planner and scientific execution; the timestep is selected explicitly.
 
 local_machine <- Sys.info()[["sysname"]] == "Darwin"
 
@@ -67,6 +67,10 @@ experiment <- list(
   paths = list(
     camels_nz = file.path(root, "02_DATA", "CAMELS-NZ"),
     fuse_template = file.path(root, "02_DATA", "FUSE-staging", "fuse_template"),
-    fuse_exe = file.path(root, "04_TOOLS", "fuse-staging", "bin", "fuse.exe")
+    # Optional machine-specific override (ARC, FIR, local).
+    fuse_exe = Sys.getenv(
+      "LSE_FUSE_EXE",
+      unset = file.path(root, "04_TOOLS", "fuse-staging", "bin", "fuse.exe")
+    )
   )
 )

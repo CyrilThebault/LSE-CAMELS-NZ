@@ -1,22 +1,75 @@
 # ==============================================================================
 # Workflow configuration
 #
-# Load an explicitly selected experiment configuration in its own environment
-# and return the experiment list used throughout the workflow.
+# One campaign configuration, explicitly resolved to daily or hourly.
+# The planner can also request the unresolved campaign.
 # ==============================================================================
-load_workflow_config <- function(config_file) {
-  
+
+load_workflow_config <- function(
+  config_file,
+  timestep = NULL,
+  mode = c("execution", "campaign")
+) {
+
+  mode <- match.arg(mode)
   config_file <- normalizePath(config_file, mustWork = TRUE)
-  
+
   env <- new.env(parent = globalenv())
   sys.source(config_file, envir = env)
-  
+
   if (!exists("experiment", envir = env, inherits = FALSE)) {
     stop("experiment object missing from ", config_file)
   }
-  
-  env$experiment
+
+  experiment <- env$experiment
+
+  if (!is.list(experiment)) {
+    stop("experiment must be a list: ", config_file)
+  }
+
+  available <- experiment$timesteps
+
+  if (!is.character(available) ||
+      length(available) == 0L ||
+      anyNA(available) ||
+      anyDuplicated(available) ||
+      !all(available %in% c("daily", "hourly"))) {
+    stop("Invalid unified campaign timesteps: ", config_file)
+  }
+
+  if (identical(mode, "campaign")) {
+    if (!is.null(timestep)) {
+      stop("Campaign mode does not accept a timestep")
+    }
+    return(experiment)
+  }
+
+  if (!is.character(timestep) ||
+      length(timestep) != 1L ||
+      is.na(timestep) ||
+      !timestep %in% c("daily", "hourly")) {
+    stop("Execution requires timestep = 'daily' or 'hourly'")
+  }
+
+  if (!timestep %in% available) {
+    stop("Timestep not available in campaign: ", timestep)
+  }
+
+  resolve_workflow_config(experiment, timestep)
 }
+
+
+# ==============================================================================
+# Canonical observed flood workflow configuration
+#
+# The observed flood catalogue uses hourly Qobs independently of the
+# resolution selected for a daily/hourly simulation.
+# ==============================================================================
+
+load_observed_flood_config <- function(config_file) {
+  load_workflow_config(config_file, timestep = "hourly")
+}
+
 
 # ==============================================================================
 # Time-step information

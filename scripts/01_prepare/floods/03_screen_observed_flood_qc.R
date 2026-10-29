@@ -18,7 +18,7 @@ dirMain <- normalizePath(args[2], mustWork = TRUE)
 source(file.path(dirMain, "scripts", "functions", "common.R"))
 source(file.path(dirMain, "scripts", "functions", "floods.R"))
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_observed_flood_config(config_file)
 
 stopifnot(
   is.character(experiment$timezone),

@@ -2,13 +2,26 @@
 
 set -euo pipefail
 
-if [[ "$#" -ne 2 ]]; then
-  echo "Usage: bash submit_local_calibration_hpc_fir.sh <DIR_MAIN> <CONFIG_FILE>" >&2
-  exit 1
+if [[ $# -ne 4 || "$3" != "--timestep" ]]; then
+  echo "Usage: bash submit_local_calibration_hpc_fir.sh <DIR_MAIN> <CONFIG_FILE> --timestep <daily|hourly>" >&2
+  exit 2
 fi
+
+TIMESTEP="$4"
+
+case "$TIMESTEP" in
+  daily|hourly) ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
 
 DIR_MAIN="$(cd "$1" && pwd -P)"
 CONFIG_FILE="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
+
+# Resolution is validated by the required --timestep argument.
+
 
 BASIN_FILE="${BASIN_FILE:-$DIR_MAIN/config/basins.txt}"
 SLURM_SCRIPT="$DIR_MAIN/scripts/04_simulations/local_calibration/run_local_calibration_hpc_fir.slurm"
@@ -59,13 +72,15 @@ CONFIG_SHA256="$(file_sha256 "$CONFIG_FILE")"
 # The canonical basin list and experiment configuration
 # determine the Slurm array size and scientific settings.
 SETTINGS="$(
-  Rscript --vanilla - "$DIR_MAIN" "$CONFIG_FILE" "$BASIN_FILE" <<'RS'
+  Rscript --vanilla - "$DIR_MAIN" "$CONFIG_FILE" "$BASIN_FILE" "$TIMESTEP" <<'RS'
 args <- commandArgs(trailingOnly = TRUE)
 
 source(file.path(args[1], "scripts/functions/common.R"))
 source(file.path(args[1], "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(args[2])
+experiment <- load_workflow_config(
+  args[2], timestep = args[4]
+)
 basins <- read_basin_ids(args[3])
 
 timestep <- experiment$timestep
@@ -137,7 +152,7 @@ JOB_ID="$(
     --parsable \
     --array="1-$NBASINS" \
     --export="ALL,DIR_MAIN=$DIR_MAIN,CONFIG_FILE=$CONFIG_FILE,EXPERIMENT_DIR=$EXPERIMENT_DIR,BASIN_FILE=$BASIN_FILE,BASIN_SHA256=$BASIN_SHA256,CONFIG_SHA256=$CONFIG_SHA256" \
-    "$SLURM_SCRIPT"
+    "$SLURM_SCRIPT" --timestep "$TIMESTEP"
 )"
 
 echo

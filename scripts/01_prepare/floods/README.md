@@ -19,7 +19,7 @@ Important conventions:
 - Detection uses the original hourly CAMELS-NZ streamflow CSV data,
   not the prepared FUSE forcing NetCDF files.
 - The selected catchments are defined in `config/basins.txt`.
-- The experiment configuration provides paths and time conventions.
+- The unified configuration provides paths and hourly time conventions.
 - A repository clone corresponds to one fixed experiment.
 - Flood events are not independently redetected at daily resolution.
 - The observed catalogue is canonical: event identifiers and
@@ -50,17 +50,20 @@ the corresponding event table.
 Unless specified otherwise, commands below are executed from the
 repository root.
 
-Set the experiment paths once:
+Set the repository root and unified configuration once before running
+the commands below:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
 ```
 
-Use the configuration belonging to the current experiment clone.
-For an hourly experiment, select its fixed hourly configuration
-instead. Both configurations use hourly observations for flood
-detection.
+The flood scripts use `load_observed_flood_config()` to resolve
+`config/experiment.R` to the hourly configuration automatically.
+They do not accept a `--timestep` argument. The canonical observed
+flood catalogue is constructed once from raw hourly observations
+and is shared by daily and hourly performance analyses.
 
 ## 3. Build the canonical observed flood catalogue
 
@@ -244,7 +247,7 @@ The local and HPC plotting launchers support:
 | Variable | Meaning |
 | --- | --- |
 | `DIR_MAIN` | Repository root |
-| `CONFIG_FILE` | Fixed experiment configuration |
+| `CONFIG_FILE` | Unified `config/experiment.R` |
 | `NCORES` | Number of parallel plotting processes |
 | `BASIN_FILE` | Basin-list file; defaults to `config/basins.txt` |
 | `BASIN_IDS` | Optional space- or comma-separated basin subset |
@@ -401,8 +404,8 @@ Rscript scripts/01_prepare/floods/05_build_observed_flood_daily_units.R \
   "$CONFIG_FILE" "$DIR_MAIN"
 ```
 
-The script uses the experiment configuration to interpret
-timestamps and daily boundaries.
+The script uses the unified configuration, resolved to hourly,
+to interpret timestamps and daily boundaries.
 
 It does not detect another set of daily floods or modify the
 canonical hourly event identifiers and boundaries.
@@ -426,7 +429,7 @@ The canonical detection methodology is fixed.
 
 To reproduce the analyses consistently:
 
-1. Keep `config/basins.txt` and the experiment configuration
+1. Keep `config/basins.txt` and `config/experiment.R`
    fixed within the repository clone.
 2. Preserve the original observed streamflow and input metadata.
 3. Retain the canonical catalogue and its diagnostic outputs.
@@ -447,4 +450,3 @@ confirming that replacement is intended.
 
 - [Main repository README](../../../README.md)
 - [CAMELS-NZ/FUSE preparation](../README.md)
-- [Prepared testcase](../../../testcase/README.md)

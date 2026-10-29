@@ -21,12 +21,11 @@ Bash and R are available. Split creation does not require Slurm.
 
 ## Configuration
 
-The daily and hourly configurations are:
+The unified `config/experiment.R` defines spatial experiment settings for
+both daily and hourly resolutions. Select the resolution explicitly with
+`--timestep daily` or `--timestep hourly` when creating or validating splits.
 
-- `config/experiment_daily.R`
-- `config/experiment_hourly.R`
-
-They define the available spatial experiments:
+The configured spatial experiments are:
 
 ```r
 split_modes = c("allseen", "loo", "kfold", "cluster"),
@@ -65,32 +64,34 @@ Work on one spatial experiment at a time:
 Creating all configured partitions at once is also possible, but is
 not required.
 
-Run commands from the repository root.
+The creation commands below generate real partition files; they are not
+dry runs. The standalone validator checks existing partitions without
+modifying them. Each example begins by entering the repository root.
 
 ### Create one experiment
 
 Daily LOO:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 bash scripts/03_experiments/run_create_experiment_splits.sh \
-  "$PWD" "$PWD/config/experiment_daily.R" \
-  --modes loo
+  "$PWD" "$PWD/config/experiment.R" --timestep daily --modes loo
 ```
 
 Hourly cluster:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 bash scripts/03_experiments/run_create_experiment_splits.sh \
-  "$PWD" "$PWD/config/experiment_hourly.R" \
-  --modes cluster
+  "$PWD" "$PWD/config/experiment.R" --timestep hourly --modes cluster
 ```
 
 ### Create several selected experiments
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 bash scripts/03_experiments/run_create_experiment_splits.sh \
-  "$PWD" "$PWD/config/experiment_daily.R" \
-  --modes allseen,loo
+  "$PWD" "$PWD/config/experiment.R" --timestep daily --modes allseen,loo
 ```
 
 Only the explicitly selected modes are inspected and created.
@@ -99,8 +100,9 @@ Other modes are not modified, even if they contain existing results.
 ### Create all configured experiments
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 bash scripts/03_experiments/run_create_experiment_splits.sh \
-  "$PWD" "$PWD/config/experiment_daily.R"
+  "$PWD" "$PWD/config/experiment.R" --timestep daily
 ```
 
 When `--modes` is omitted, all `experiment$split_modes` are selected.
@@ -161,11 +163,9 @@ after creating each selected mode.
 The validator can also be run independently on existing experiments:
 
 ```bash
-Rscript --vanilla \
-  scripts/03_experiments/02_validate_experiment_splits.R \
-  loo \
-  "$PWD/config/experiment_daily.R" \
-  "$PWD"
+cd "$(git rev-parse --show-toplevel)"
+Rscript --vanilla scripts/03_experiments/02_validate_experiment_splits.R \
+  loo "$PWD/config/experiment.R" "$PWD" --timestep daily
 ```
 
 For `loo`, `kfold` and `cluster`, validation checks that:
@@ -194,9 +194,9 @@ To regenerate explicitly selected modes whose directories contain
 only partition files:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 bash scripts/03_experiments/run_create_experiment_splits.sh \
-  "$PWD" "$PWD/config/experiment_daily.R" \
-  --modes loo --force
+  "$PWD" "$PWD/config/experiment.R" --timestep daily --modes loo --force
 ```
 
 `--force` requires `--modes`.
@@ -221,18 +221,15 @@ partitions already created in an earlier selected mode.
 For individual use, the underlying generator remains available:
 
 ```bash
-Rscript --vanilla \
-  scripts/03_experiments/01_create_experiment_splits.R \
-  kfold \
-  "$PWD/config/experiment_daily.R" \
-  "$PWD" \
-  5
+cd "$(git rev-parse --show-toplevel)"
+Rscript --vanilla scripts/03_experiments/01_create_experiment_splits.R \
+  kfold "$PWD/config/experiment.R" "$PWD" 5 --timestep daily
 ```
 
 The generator takes:
 
 ```text
-<allseen|loo|kfold|cluster> <config_file> <dirMain> [K|cluster_column]
+<allseen|loo|kfold|cluster> <config_file> <dirMain> [K|cluster_column] --timestep <daily|hourly>
 ```
 
 The direct generator protects nonempty experiment directories, but it
@@ -245,6 +242,6 @@ routine creation.
 - Local emulator simulations run on an explicitly selected fold.
 - ARC and FIR submission scripts discover folds by their train/test files.
 - `05_evaluation` evaluates the selected test basins.
-- `06_analysis` collects test-basin results across folds.
+- Cross-fold aggregation of test-basin evaluation results is a separate downstream analysis task.
 
 The spatial split creation does not run FUSE or train any emulator.

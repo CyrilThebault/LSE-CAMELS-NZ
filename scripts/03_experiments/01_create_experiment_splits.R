@@ -12,12 +12,18 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) < 3L) {
+if (
+  !(length(args) %in% c(5L, 6L)) ||
+  !identical(args[length(args) - 1L], "--timestep")
+) {
   stop(
     "Usage: Rscript 01_create_experiment_splits.R ",
-    "<allseen|loo|kfold|cluster> <config_file> <dirMain> [K|cluster_column]"
+    "<allseen|loo|kfold|cluster> <config_file> <dirMain> [K|cluster_column] --timestep <daily|hourly>"
   )
 }
+
+timestep <- args[length(args)]
+args <- head(args, -2L)
 
 mode <- args[1]
 config_file <- normalizePath(args[2], mustWork = TRUE)
@@ -26,7 +32,11 @@ dirMain <- normalizePath(args[3], mustWork = TRUE)
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(config_file)
+# Use the explicitly requested scientific timestep.
+experiment <- load_workflow_config(
+  config_file,
+  timestep = timestep
+)
 paths <- project_paths(dirMain, experiment)
 
 ids <- read_basin_ids(file.path(dirMain, "config", "basins.txt"))

@@ -15,7 +15,7 @@ dirMain <- normalizePath(args[2], mustWork = TRUE)
 
 source(file.path(dirMain, "scripts", "functions", "common.R"))
 
-exp <- load_workflow_config(config_file)
+exp <- load_observed_flood_config(config_file)
 tz <- exp$timezone
 
 input <- file.path(

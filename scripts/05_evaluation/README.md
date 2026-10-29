@@ -151,11 +151,10 @@ models or temporal resolutions.
 
 ## Temporal evaluation periods
 
-Calibration and evaluation periods are defined in the corresponding
-experiment configuration:
-
-- `config/experiment_daily.R`
-- `config/experiment_hourly.R`
+Calibration and evaluation periods are defined in the unified
+`config/experiment.R` and resolved for the selected `daily` or `hourly`
+timestep. The individual evaluator obtains this timestep from the archived
+simulation metadata; the campaign evaluator requires `--timestep` explicitly.
 
 The evaluation uses the experiment's configured starting date and
 includes the complete calendar day of each configured ending date.
@@ -236,6 +235,19 @@ Local calibration results are identified by method `sce`.
 
 Run the commands from the repository root.
 
+The commands below use concrete example paths. In an existing checkout,
+these paths may contain legacy archives produced with the former
+`experiment_daily.R` or `experiment_hourly.R` configurations. Such archives
+are not automatically compatible with the current evaluation interfaces:
+some older emulator archives also lack required provenance fields, and
+older evaluations may not record `complete_calendar_days_v1`.
+
+The examples demonstrate commands for compatible archives, not permission
+to overwrite historical results. Verify archive provenance separately
+before execution. `--check` performs evaluation calculations without
+publishing persistent results; it is not merely a syntax check. Do not
+use `--force` to bypass metadata incompatibilities.
+
 ### Evaluate one archived hydrograph
 
 ```text
@@ -264,18 +276,21 @@ evaluation destination.
 The interface above uses placeholders and is not intended to be
 copied literally.
 
-For example, to check the archived daily simulation for basin 1316,
-using GBMv02 at refinement step 2:
+For example, the following command checks a daily GBMv02 archive for
+basin 1316 at refinement step 2, provided its provenance has been validated
+against the current configuration:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 Rscript --vanilla scripts/05_evaluation/01_evaluate_FUSE.R \
   "$PWD/experiments/daily/kfold/fold_01/hydrographs/zDecision_126/test/1316/step_2/GBMv02" \
-  "$PWD" \
-  --check
+  "$PWD" --check
 ```
 
-Run this command from the repository root. It requires the corresponding
-archived hydrograph and evaluates it without writing persistent results.
+This command requires a compatible archived hydrograph and computes
+metrics without writing persistent results. The historical archive at this
+path currently references a deleted configuration file; do not execute this
+example on that archive without a separately validated provenance migration.
 
 ### Evaluate an experiment
 
@@ -284,6 +299,7 @@ Rscript scripts/05_evaluation/02_evaluate_experiment.R \
   EXPERIMENT_DIR \
   CONFIG_FILE \
   DIR_MAIN \
+  --timestep <daily|hourly> \
   [--step N] [--check|--force]
 ```
 
@@ -291,7 +307,7 @@ Arguments:
 
 - `experiment_dir`: experiment directory containing archived
   hydrographs.
-- `config_file`: experiment configuration file.
+- `config_file`: unified `config/experiment.R` file.
 - `dirMain`: repository root.
 
 Options:
@@ -312,21 +328,35 @@ earlier refinement steps for missing selected simulations.
 Missing hydrographs must be produced by the appropriate upstream
 simulation workflow before evaluation.
 
-The interface above uses placeholders. For a daily k-fold experiment,
-the corresponding command is:
+The interface above uses placeholders. The following two complete
+examples illustrate daily and hourly k-fold evaluation commands. They
+require compatible, complete archives; the historical `fold_01` archives
+currently present in this checkout do not satisfy the current provenance
+requirements.
+
+Daily k-fold example:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 Rscript --vanilla scripts/05_evaluation/02_evaluate_experiment.R \
   "$PWD/experiments/daily/kfold/fold_01" \
-  "$PWD/config/experiment_daily.R" \
-  "$PWD" \
-  --check
+  "$PWD/config/experiment.R" "$PWD" --timestep daily --check
 ```
 
-Run this command from the repository root after the selected experiment
-has all its required archived hydrographs. The campaign validates the
-expected basin-emulator combinations, so an incomplete archive will
-cause a preflight error. The `--check` option does not write results.
+Hourly k-fold example:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+Rscript --vanilla scripts/05_evaluation/02_evaluate_experiment.R \
+  "$PWD/experiments/hourly/kfold/fold_01" \
+  "$PWD/config/experiment.R" "$PWD" --timestep hourly --check
+```
+
+Run these commands only after the selected experiment has all its
+required compatible archived hydrographs. The campaign validates expected
+basin-emulator combinations and refuses missing or incompatible provenance;
+an incomplete archive causes a preflight error. The `--check` option
+calculates evaluations without writing persistent result files.
 
 ## Output organization
 

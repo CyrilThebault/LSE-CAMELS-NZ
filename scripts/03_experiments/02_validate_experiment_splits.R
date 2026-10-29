@@ -5,12 +5,17 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 3L) {
+if (
+  length(args) != 5L ||
+  !identical(args[4L], "--timestep")
+) {
   stop(
     "Usage: Rscript 02_validate_experiment_splits.R ",
-    "<allseen|loo|kfold|cluster> <config_file> <dirMain>"
+    "<allseen|loo|kfold|cluster> <config_file> <dirMain> --timestep <daily|hourly>"
   )
 }
+
+timestep <- args[5L]
 
 mode <- args[1]
 config_file <- normalizePath(args[2], mustWork = TRUE)
@@ -25,7 +30,10 @@ if (!mode %in% allowed) {
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_workflow_config(
+  config_file,
+  timestep = timestep
+)
 paths <- project_paths(dirMain, experiment)
 
 ids <- read_basin_ids(file.path(dirMain, "config", "basins.txt"))

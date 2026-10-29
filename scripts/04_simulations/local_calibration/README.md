@@ -22,11 +22,13 @@ independently after their shared input preparation.
 
 ## Usage
 
-The low-level runner accepts six positional arguments, in this order:
+The low-level runner accepts six positional arguments followed by the
+mandatory `--timestep daily|hourly` option:
 
 ```text
 Rscript scripts/04_simulations/local_calibration/01_run_local_calibration.R \
-  BASIN_ID EXPERIMENT_DIR MODE WORK_DIR CONFIG_FILE DIR_MAIN
+  BASIN_ID EXPERIMENT_DIR MODE WORK_DIR CONFIG_FILE DIR_MAIN \
+  --timestep daily|hourly
 ```
 
 This is an interface description, not a command to execute verbatim.
@@ -41,12 +43,13 @@ For normal basin campaigns, use the local or HPC launchers below.
 - `archive`: validate and archive results from an existing
   completed SCE/OPT workspace, without executing FUSE.
 
-The model structure (`zDecision`), timestep, calibration period
-and objective function are read from the experiment configuration.
+The model structure (`zDecision`), calibration period and objective
+function are read from the unified `config/experiment.R`. The timestep
+is selected explicitly with `--timestep daily` or `--timestep hourly`
+and resolved by the common configuration loader.
 
-SCE settings (`maxn`, `kstop`, `pcento`) are defined in
-`config/experiment_daily.R` and `config/experiment_hourly.R`, under
-`experiment$local_calibration$sce`.
+SCE settings (`maxn`, `kstop`, `pcento`) are defined in the unified
+`config/experiment.R`, under `experiment$local_calibration$sce`.
 
 The shared `prepare_fuse_workspace()` function reads and validates these
 settings without fallback values. The configured values are:
@@ -67,21 +70,36 @@ All commands below assume they are executed from the repository root.
 
 ### Local campaign
 
-The local launcher uses environment variables rather than positional
-arguments.
+The local launcher requires `--timestep daily|hourly` and the
+environment variables `DIR_MAIN`, `CONFIG_FILE` and `EXPERIMENT_DIR`.
+Use `DRY_RUN=1` to inspect the basin and archive preflight without
+starting calibration.
 
 Example: inspect the daily campaign without executing FUSE:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+
 DIR_MAIN="$PWD" \
-CONFIG_FILE="$PWD/config/experiment_daily.R" \
+CONFIG_FILE="$PWD/config/experiment.R" \
 EXPERIMENT_DIR="$PWD/experiments/daily/localcalib/all_basins" \
 DRY_RUN=1 \
-bash scripts/04_simulations/local_calibration/run_local_calibration_local.sh
+bash scripts/04_simulations/local_calibration/run_local_calibration_local.sh \
+  --timestep daily
 ```
 
-To use hourly data, replace `daily` with `hourly` in both
-`CONFIG_FILE` and `EXPERIMENT_DIR`.
+To inspect the hourly campaign without executing FUSE:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+
+DIR_MAIN="$PWD" \
+CONFIG_FILE="$PWD/config/experiment.R" \
+EXPERIMENT_DIR="$PWD/experiments/hourly/localcalib/all_basins" \
+DRY_RUN=1 \
+bash scripts/04_simulations/local_calibration/run_local_calibration_local.sh \
+  --timestep hourly
+```
 
 After reviewing the dry run, remove `DRY_RUN=1` to execute the
 campaign. The optional `NCORES` variable controls the number of
@@ -89,11 +107,17 @@ parallel local calibration processes.
 
 ### ARC submission
 
-Example: validate the daily submission without submitting any jobs:
+Examples: validate daily and hourly submissions without submitting
+any jobs:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+
 DRY_RUN=1 bash scripts/04_simulations/local_calibration/submit_local_calibration_hpc_arc.sh \
-  "$PWD" "$PWD/config/experiment_daily.R"
+  "$PWD" "$PWD/config/experiment.R" --timestep daily
+
+DRY_RUN=1 bash scripts/04_simulations/local_calibration/submit_local_calibration_hpc_arc.sh \
+  "$PWD" "$PWD/config/experiment.R" --timestep hourly
 ```
 
 Run this submission command on ARC without `DRY_RUN=1` to submit
@@ -101,17 +125,25 @@ the actual Slurm job array.
 
 ### FIR submission
 
-Example: validate the daily submission without submitting any jobs:
+Examples: validate daily and hourly submissions without submitting
+any jobs:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+
 DRY_RUN=1 bash scripts/04_simulations/local_calibration/submit_local_calibration_hpc_fir.sh \
-  "$PWD" "$PWD/config/experiment_daily.R"
+  "$PWD" "$PWD/config/experiment.R" --timestep daily
+
+DRY_RUN=1 bash scripts/04_simulations/local_calibration/submit_local_calibration_hpc_fir.sh \
+  "$PWD" "$PWD/config/experiment.R" --timestep hourly
 ```
 
 Run this submission command on FIR without `DRY_RUN=1` to submit
 the actual Slurm job array.
 
-For hourly experiments, use `config/experiment_hourly.R` instead.
+Both HPC submitters use `config/experiment.R`. Select the required
+resolution with `--timestep daily` or `--timestep hourly`. The commands
+above are dry runs; removing `DRY_RUN=1` submits real Slurm jobs.
 
 ### Basin selection and output paths
 
@@ -131,8 +163,9 @@ The Slurm array indices range from `1` to `NBASINS`
 Each Slurm array index selects the corresponding basin from the
 validated list. No basin count is hard-coded in the launchers.
 
-The timestep and `zDecision` are read from the experiment
-configuration.
+The timestep is selected by the mandatory `--timestep` argument
+and validated against `config/experiment.R`. The `zDecision` value
+comes from that configuration and is not overridden by these launchers.
 
 The default HPC output directory is:
 
@@ -212,6 +245,8 @@ Rscript scripts/05_evaluation/02_evaluate_experiment.R \
   EXPERIMENT_DIR CONFIG_FILE DIR_MAIN
 ```
 
-The names above are placeholders for actual paths.
+The names above are placeholders for actual paths. The evaluator
+still has a separate legacy timestep interface that must be migrated
+before documenting execution with the unified configuration.
 
 The evaluator uses archived hydrographs and never runs FUSE.

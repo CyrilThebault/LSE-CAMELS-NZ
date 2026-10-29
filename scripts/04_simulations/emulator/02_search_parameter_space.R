@@ -10,8 +10,21 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) < 7L) {
-  stop("Usage: Rscript 02_search_parameter_space.R <basinID> <experiment_dir> <zDecision> <modelStep> <phase:train|test> <config_file> <dirMain> [--emulator RF,GBMv02] [--resume]")
+usage <- paste(
+  "Usage: Rscript 02_search_parameter_space.R",
+  "<basinID> <experiment_dir> <zDecision> <modelStep>",
+  "<phase:train|test> <config_file> <dirMain>",
+  "--timestep <daily|hourly> [--emulator RF,GBMv02] [--resume]"
+)
+
+if (length(args) < 9L || !identical(args[8L], "--timestep")) {
+  stop(usage)
+}
+
+workflow_timestep <- args[9L]
+
+if (!(workflow_timestep %in% c("daily", "hourly"))) {
+  stop("Invalid --timestep: ", workflow_timestep, ". Expected daily or hourly")
 }
 
 basinID <- as.character(args[1])
@@ -36,10 +49,13 @@ source(file.path(dirMain, "scripts/functions/emulator_data.R"))
 source(file.path(dirMain, "scripts/functions/fuse.R"))
 source(file.path(dirMain, "scripts/functions/emulator.R"))
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_workflow_config(
+  config_file,
+  timestep = workflow_timestep
+)
 
 # Select methods for this invocation without changing the configuration.
-optional_args <- if (length(args) > 7L) args[-seq_len(7L)] else character()
+optional_args <- if (length(args) > 9L) args[-seq_len(9L)] else character()
 
 resume <- "--resume" %in% optional_args
 

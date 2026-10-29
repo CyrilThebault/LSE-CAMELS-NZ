@@ -39,15 +39,47 @@ ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:?This script must be submitted as a Slurm j
 # Workflow configuration
 # ==============================================================================
 
-DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
-CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
+if [[ "$#" -ne 5 || "${4:-}" != "--timestep" ]]; then
+  echo "Usage: sbatch --array=1-N $(basename "$0") <DIR_MAIN> <CONFIG_FILE> <ZDECISION> --timestep <daily|hourly>" >&2
+  exit 2
+fi
+
+DIR_MAIN="$(cd "$1" && pwd -P)"
+CONFIG_FILE="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
+ZDECISION_REQUESTED="$3"
+TIMESTEP="$5"
+
+case "$TIMESTEP" in
+  daily|hourly)
+    ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "Missing configuration: $CONFIG_FILE" >&2
+  exit 2
+fi
+
 
 ZDECISION="$(
-  Rscript --vanilla - "$DIR_MAIN" "$CONFIG_FILE" "${ZDECISION:-}" <<'RS'
+  Rscript --vanilla - "$DIR_MAIN" "$CONFIG_FILE" "$ZDECISION_REQUESTED" "$TIMESTEP" <<'RS'
 args <- commandArgs(trailingOnly = TRUE)
 
 source(file.path(args[1], "scripts/functions/common.R"))
-experiment <- load_workflow_config(args[2])
+if (
+  length(args) != 4L ||
+  !(args[4] %in% c("daily", "hourly"))
+) {
+  stop("Invalid explicit timestep passed to iter0 decision selector")
+}
+
+experiment <- load_workflow_config(
+  args[2],
+  timestep = args[4]
+)
 
 decisions <- as.character(experiment$zDecision)
 
@@ -144,4 +176,4 @@ mkdir -p "$TMP_BASE"
 # concurrent model runs.
 # ==============================================================================
 
-Rscript "$DIR_MAIN/scripts/02_iter0/01_run_iter0.R" "$BASIN_ID" "$ZDECISION" "$TMP_BASE" "$CONFIG_FILE" "$DIR_MAIN"
+Rscript "$DIR_MAIN/scripts/02_iter0/01_run_iter0.R" "$BASIN_ID" "$ZDECISION" "$TMP_BASE" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP"

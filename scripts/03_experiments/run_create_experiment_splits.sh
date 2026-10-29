@@ -6,36 +6,54 @@ set -euo pipefail
 # Create the spatial experiment splits selected in the workflow configuration.
 #
 # Usage:
-#   bash run_create_experiment_splits.sh <DIR_MAIN> <CONFIG_FILE>
-#   bash run_create_experiment_splits.sh <DIR_MAIN> <CONFIG_FILE> --modes loo
-#   bash run_create_experiment_splits.sh <DIR_MAIN> <CONFIG_FILE> --modes allseen,loo
+#   bash run_create_experiment_splits.sh <DIR_MAIN> <CONFIG_FILE> --timestep hourly
+#   bash run_create_experiment_splits.sh <DIR_MAIN> <CONFIG_FILE> --timestep hourly --modes loo
+#   bash run_create_experiment_splits.sh <DIR_MAIN> <CONFIG_FILE> --timestep hourly --modes allseen,loo
 #
 # Existing experiment directories are never overwritten.
 # ==============================================================================
 
-if [[ "$#" -ne 2 && "$#" -ne 4 && "$#" -ne 5 ]]; then
-  echo "Usage: bash run_create_experiment_splits.sh <DIR_MAIN> <CONFIG_FILE> [--modes mode1,mode2] [--force]" >&2
+if [[ "$#" -ne 4 && "$#" -ne 6 && "$#" -ne 7 ]]; then
+  echo "Usage: bash run_create_experiment_splits.sh <DIR_MAIN> <CONFIG_FILE> --timestep <daily|hourly> [--modes mode1,mode2 [--force]]" >&2
   exit 1
 fi
 
 DIR_MAIN="$(cd "$1" && pwd -P)"
 CONFIG_FILE="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
 
+# Required explicit scientific timestep.
+if [[ "$3" != "--timestep" ]]; then
+  echo "Expected --timestep <daily|hourly>" >&2
+  exit 2
+fi
+
+TIMESTEP="$4"
+
+case "$TIMESTEP" in
+  daily|hourly)
+    ;;
+  *)
+    echo "Invalid --timestep: $TIMESTEP" >&2
+    exit 2
+    ;;
+esac
+
+
 REQUESTED_MODES=""
 FORCE="false"
 
-if [[ "$#" -ge 4 ]]; then
-  if [[ "$3" != "--modes" || -z "$4" ]]; then
+if [[ "$#" -ge 6 ]]; then
+  if [[ "$5" != "--modes" || -z "$6" ]]; then
     echo "Expected --modes followed by comma-separated experiment modes" >&2
     exit 1
   fi
 
-  REQUESTED_MODES="$4"
+  REQUESTED_MODES="$6"
 fi
 
-if [[ "$#" -eq 5 ]]; then
-  if [[ "$5" != "--force" ]]; then
-    echo "Unknown option: $5" >&2
+if [[ "$#" -eq 7 ]]; then
+  if [[ "$7" != "--force" ]]; then
+    echo "Unknown option: $7" >&2
     exit 1
   fi
 
@@ -71,7 +89,8 @@ Rscript --vanilla - \
   "$CONFIG_FILE" \
   "$REQUESTED_MODES" \
   "$PLAN_FILE" \
-  "$FORCE" <<'RS'
+  "$FORCE" \
+  "$TIMESTEP" <<'RS'
 
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -80,11 +99,16 @@ config_file <- args[2]
 requested_modes <- args[3]
 plan_file <- args[4]
 force <- identical(args[5], "true")
+stopifnot(length(args) == 6L)
+timestep <- args[6]
 
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_workflow_config(
+  config_file,
+  timestep = timestep
+)
 paths <- project_paths(dirMain, experiment)
 
 ids <- read_basin_ids(file.path(dirMain, "config", "basins.txt"))
@@ -365,12 +389,12 @@ while IFS=$'\t' read -r MODE PARAM; do
   case "$MODE" in
     allseen|loo)
       Rscript --vanilla "$SPLIT_SCRIPT" \
-        "$MODE" "$CONFIG_FILE" "$DIR_MAIN"
+        "$MODE" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP"
       ;;
 
     kfold|cluster)
       Rscript --vanilla "$SPLIT_SCRIPT" \
-        "$MODE" "$CONFIG_FILE" "$DIR_MAIN" "$PARAM"
+        "$MODE" "$CONFIG_FILE" "$DIR_MAIN" "$PARAM" --timestep "$TIMESTEP"
       ;;
 
     *)
@@ -382,7 +406,7 @@ while IFS=$'\t' read -r MODE PARAM; do
   echo "Validating experiment splits: $MODE"
 
   Rscript --vanilla "$VALIDATE_SCRIPT" \
-    "$MODE" "$CONFIG_FILE" "$DIR_MAIN"
+    "$MODE" "$CONFIG_FILE" "$DIR_MAIN" --timestep "$TIMESTEP"
 
 done < "$PLAN_FILE"
 

@@ -10,15 +10,26 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
+usage <- paste(
+  "Usage: Rscript 04_create_CAMELS_NZ_attributes.R",
+  "<config_file> <dirMain> --timestep <daily|hourly> [--force]"
+)
+
 if (
-  length(args) < 2L ||
-  length(args) > 3L ||
-  (length(args) == 3L && args[3] != "--force")
+  !(length(args) %in% c(4L, 5L)) ||
+  args[3] != "--timestep" ||
+  (length(args) == 5L && args[5] != "--force")
 ) {
-  stop("Usage: Rscript 04_create_CAMELS_NZ_attributes.R <config_file> <dirMain> [--force]")
+  stop(usage)
 }
 
-force <- length(args) == 3L
+workflow_timestep <- args[4]
+
+if (!(workflow_timestep %in% c("daily", "hourly"))) {
+  stop("Invalid --timestep: ", workflow_timestep, ". ", usage)
+}
+
+force <- length(args) == 5L
 
 config_file <- normalizePath(args[1], mustWork = TRUE)
 dirMain <- normalizePath(args[2], mustWork = TRUE)
@@ -26,7 +37,10 @@ dirMain <- normalizePath(args[2], mustWork = TRUE)
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_workflow_config(
+  config_file,
+  timestep = workflow_timestep
+)
 paths <- project_paths(dirMain, experiment)
 
 attributes_file <- file.path(paths$useful, "attributes.RData")

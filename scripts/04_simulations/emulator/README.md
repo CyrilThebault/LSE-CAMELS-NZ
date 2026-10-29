@@ -3,11 +3,10 @@
 This module trains Large-Sample Emulators (LSE), searches the FUSE
 parameter space and evaluates proposed candidates using FUSE.
 
-The same workflow supports daily and hourly experiments. The execution
-scripts use `config/experiment_daily.R` or `config/experiment_hourly.R` to
-select timestep, model structure and refinement settings. The unified
-`config/experiment.R` describes the broader campaign and is currently used
-by the read-only planner, not directly by the simulation launchers.
+The read-only campaign planner and simulation launchers use the unified
+`config/experiment.R`. Select the temporal resolution explicitly with
+`--timestep daily` or `--timestep hourly`, and use the corresponding
+experiment directory and prepared FUSE inputs.
 
 Supported emulator methods are `RF`, `GBMv01` and `GBMv02`.
 
@@ -81,11 +80,23 @@ The local launcher requires GNU Parallel.
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
 export EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
 export NCORES=4
 
-bash scripts/04_simulations/emulator/run_LSE_split_local.sh
+bash scripts/04_simulations/emulator/run_LSE_split_local.sh --timestep daily
+```
+
+For an hourly k-fold experiment:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+export EXPERIMENT_DIR="$DIR_MAIN/experiments/hourly/kfold/fold_01"
+export NCORES=4
+
+bash scripts/04_simulations/emulator/run_LSE_split_local.sh --timestep hourly
 ```
 
 To select two methods and resume an interrupted local workflow, after
@@ -94,37 +105,43 @@ inspecting the intended fold and its outputs:
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
 export EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
 export NCORES=4
 export EMULATORS="RF,GBMv02"
 
-bash scripts/04_simulations/emulator/run_LSE_split_local.sh --resume
+bash scripts/04_simulations/emulator/run_LSE_split_local.sh --timestep daily --resume
 ```
 
-**These launcher commands execute real training, GA and FUSE work whenever
-required outputs are missing.** Do not use them as read-only validation
-commands on historical campaigns. For hourly experiments, use
-`experiment_hourly.R` and the corresponding directory under
-`experiments/hourly/`.
+**Warning:** The local launch commands may start emulator training,
+parameter searches and FUSE simulations, including when using `--resume`.
+Do not use them solely to inspect existing experiments. For read-only
+inspection, use `00_plan_LSE_campaign.R` with `--dry-run`.
 
-`EMULATORS` is an optional comma-separated subset of configured methods;
-when unset, all configured emulators are selected. `ZDECISION` and `NREFINE`
-default to the resolution-specific configuration and may be overridden.
-`NCORES` controls local parallel execution. `--resume` is a local launcher
-option passed through to the three scientific scripts; HPC submitter
-support for the flag has not been established by this refactoring.
+Always select a timestep consistent with the experiment directory:
+`--timestep daily` for `experiments/daily/`, or `--timestep hourly`
+for `experiments/hourly/`.
+
+`EMULATORS` selects an optional comma-separated subset of configured methods;
+when unset, all configured emulators are selected. The optional
+`--zdecision 126` flag overrides the configured `zDecision` when required.
+`NREFINE` remains an optional environment override of the configured
+refinement count. `NCORES` controls local parallel execution.
+The local launcher accepts `--resume` and forwards it to training,
+GA and FUSE candidate evaluation. The HPC submitters do not accept
+`--resume`.
 
 ### ARC HPC
 
 Submit all valid splits of an experiment:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
 
 bash scripts/04_simulations/emulator/submit_LSE_experiment_hpc_arc.sh \
-  "$DIR_MAIN" "$CONFIG_FILE" kfold
+  "$DIR_MAIN" "$CONFIG_FILE" kfold --timestep daily
 ```
 
 ### FIR HPC
@@ -132,11 +149,12 @@ bash scripts/04_simulations/emulator/submit_LSE_experiment_hpc_arc.sh \
 The equivalent FIR submission script is:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 export DIR_MAIN="$PWD"
-export CONFIG_FILE="$DIR_MAIN/config/experiment_daily.R"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
 
 bash scripts/04_simulations/emulator/submit_LSE_experiment_hpc_fir.sh \
-  "$DIR_MAIN" "$CONFIG_FILE" kfold
+  "$DIR_MAIN" "$CONFIG_FILE" kfold --timestep daily
 ```
 
 Both HPC submission scripts discover split directories containing
@@ -153,8 +171,8 @@ existing fold directories contain valid train/test files.
 
 For HPC, consult the submission scripts and the validated partition
 workflow before launching jobs. These HPC commands submit jobs; they are
-not dry runs. The local `--resume` forwarding tests do not establish that
-HPC submission scripts automatically forward this option.
+not dry runs. Both HPC submitters require `--timestep` and accept an
+optional `--zdecision` override. They do not accept `--resume`.
 
 ## Outputs
 
@@ -231,9 +249,10 @@ and candidate evaluation.
 
 Archived simulations are evaluated by
 `scripts/05_evaluation/02_evaluate_experiment.R`, using an experiment
-directory, the matching daily/hourly configuration, and the repository
-root. Consult the evaluation module README for a complete command with
-verified paths before launching it.
+directory, the unified `config/experiment.R`, and the repository root.
+The evaluation module has a separate timestep interface that remains
+to be migrated. Check its documentation and implementation before
+running evaluation commands.
 
 The evaluator never runs FUSE.
 

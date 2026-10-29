@@ -5,12 +5,22 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 10L) {
-  stop(paste(
-    "Usage: <basinID> <experiment_dir> <zDecision>",
-    "<modelStep> <phase> <emulator> <check|run>",
-    "<work_dir> <config_file> <dirMain>"
-  ))
+usage <- paste(
+  "Usage: Rscript 04_reproduce_selected_FUSE.R",
+  "<basinID> <experiment_dir> <zDecision>",
+  "<modelStep> <phase> <emulator> <check|run>",
+  "<work_dir> <config_file> <dirMain>",
+  "--timestep <daily|hourly>"
+)
+
+if (length(args) != 12L || !identical(args[11L], "--timestep")) {
+  stop(usage)
+}
+
+workflow_timestep <- args[12L]
+
+if (!(workflow_timestep %in% c("daily", "hourly"))) {
+  stop("Invalid --timestep: ", workflow_timestep, ". Expected daily or hourly")
 }
 
 basinID <- as.character(args[1])
@@ -34,7 +44,10 @@ source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/emulator_data.R"))
 source(file.path(dirMain, "scripts/functions/fuse.R"))
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_workflow_config(
+  config_file,
+  timestep = workflow_timestep
+)
 paths <- project_paths(dirMain, experiment)
 
 stopifnot(emulator %in% experiment$emulators)
@@ -162,22 +175,17 @@ if (file.exists(sim_file) || file.exists(meta_file)) {
 
   saved <- readRDS(meta_file)
 
-  if (!is.null(saved$candidate_format)) {
-    stopifnot(identical(
-      saved$candidate_format, candidate$format
-    ))
-  }
 
-  if (!is.null(saved$candidate_file)) {
-    stopifnot(identical(
-      saved$candidate_file, candidate$source_file
-    ))
-  }
   qsim <- readRDS(sim_file)
 
   stopifnot(
+    identical(saved$method_type, "emulator"),
+    identical(saved$method, emulator),
+    identical(saved$candidate_format, candidate$format),
+    identical(saved$candidate_file, candidate$source_file),
     identical(saved$experiment_dir, experiment_dir),
     identical(saved$config_file, config_file),
+    identical(saved$timestep, experiment$timestep),
     identical(saved$basinID, basinID),
     identical(saved$zDecision, zDecision),
     identical(saved$modelStep, modelStep),
@@ -277,6 +285,9 @@ stopifnot(
 metadata <- list(
   experiment_dir = experiment_dir,
   config_file = config_file,
+  timestep = experiment$timestep,
+  method_type = "emulator",
+  method = emulator,
   basinID = basinID,
   zDecision = zDecision,
   modelStep = modelStep,

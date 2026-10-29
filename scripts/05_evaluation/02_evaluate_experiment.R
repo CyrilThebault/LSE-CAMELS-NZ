@@ -7,12 +7,23 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) < 3L) {
-  stop(
-    "Usage: Rscript 02_evaluate_experiment.R ",
-    "<experiment_dir> <config_file> <dirMain> ",
-    "[--step N] [--check|--force]"
-  )
+usage <- paste0(
+  "Usage: Rscript 02_evaluate_experiment.R ",
+  "<experiment_dir> <config_file> <dirMain> ",
+  "--timestep <daily|hourly> [--step N] [--check|--force]"
+)
+
+if (
+  length(args) < 5L ||
+  !identical(args[4L], "--timestep")
+) {
+  stop(usage)
+}
+
+workflow_timestep <- args[5L]
+
+if (!workflow_timestep %in% c("daily", "hourly")) {
+  stop("Invalid --timestep: ", workflow_timestep, ". ", usage)
 }
 
 experiment_dir <- normalizePath(args[1], mustWork = TRUE)
@@ -23,7 +34,7 @@ check_only <- FALSE
 force <- FALSE
 requested_step <- NULL
 
-options <- args[-(1:3)]
+options <- args[-(1:5)]
 i <- 1L
 
 while (i <= length(options)) {
@@ -69,7 +80,10 @@ if (check_only && force) {
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/basins.R"))
 
-experiment <- load_workflow_config(config_file)
+experiment <- load_workflow_config(
+  config_file,
+  timestep = workflow_timestep
+)
 
 stopifnot(
   experiment$timestep %in% c("hourly", "daily")
@@ -139,8 +153,8 @@ for (sim_file in sim_files) {
 
   stopifnot(
     all(c(
-      "experiment_dir", "config_file",
-      "basinID", "zDecision"
+      "experiment_dir", "config_file", "timestep",
+      "basinID", "zDecision", "method_type", "method"
     ) %in% names(meta))
   )
 
@@ -153,26 +167,49 @@ for (sim_file in sim_files) {
       normalizePath(meta$config_file, mustWork = TRUE),
       config_file
     ) ||
+    !identical(meta$timestep, experiment$timestep) ||
     !identical(as.character(meta$zDecision), zDecision)
   ) {
     stop("Simulation metadata mismatch: ", hydro_dir)
   }
 
-  method_type <- if (is.null(meta$method_type)) {
-    "emulator"
-  } else {
-    meta$method_type
-  }
+  method_type <- meta$method_type
+
+  stopifnot(
+    is.character(meta$timestep),
+    length(meta$timestep) == 1L,
+    !is.na(meta$timestep),
+    meta$timestep %in% c("daily", "hourly"),
+    is.character(method_type),
+    length(method_type) == 1L,
+    !is.na(method_type),
+    method_type %in% c("emulator", "localcalib"),
+    is.character(meta$method),
+    length(meta$method) == 1L,
+    !is.na(meta$method),
+    nzchar(meta$method)
+  )
 
   if (identical(method_type, "emulator")) {
 
     has_emulator <- TRUE
 
-    method <- if (is.null(meta$method)) {
-      meta$emulator
-    } else {
-      meta$method
-    }
+    method <- meta$method
+
+    stopifnot(
+      all(c(
+        "emulator", "candidate_format", "candidate_file"
+      ) %in% names(meta)),
+      identical(method, meta$emulator),
+      is.character(meta$candidate_format),
+      length(meta$candidate_format) == 1L,
+      !is.na(meta$candidate_format),
+      nzchar(meta$candidate_format),
+      is.character(meta$candidate_file),
+      length(meta$candidate_file) == 1L,
+      !is.na(meta$candidate_file),
+      nzchar(meta$candidate_file)
+    )
 
     stopifnot(
       length(method) == 1L,
@@ -381,29 +418,30 @@ for (hydro_dir in sort(selected)) {
         file.path(hydro_dir, "metadata.rds")
       )
 
-      saved_type <- if (is.null(saved$method_type)) {
-        "emulator"
-      } else {
-        saved$method_type
+      required_resume <- c("timestep", "method_type", "method")
+
+      for (m in list(saved, source_meta)) {
+        stopifnot(all(required_resume %in% names(m)))
+
+        for (field in required_resume) {
+          value <- m[[field]]
+
+          stopifnot(
+            is.character(value),
+            length(value) == 1L,
+            !is.na(value),
+            nzchar(value)
+          )
+        }
       }
 
-      source_type <- if (is.null(source_meta$method_type)) {
-        "emulator"
-      } else {
-        source_meta$method_type
-      }
+      saved_type <- saved$method_type
 
-      saved_method <- if (is.null(saved$method)) {
-        saved$emulator
-      } else {
-        saved$method
-      }
+      source_type <- source_meta$method_type
 
-      source_method <- if (is.null(source_meta$method)) {
-        source_meta$emulator
-      } else {
-        source_meta$method
-      }
+      saved_method <- saved$method
+
+      source_method <- source_meta$method
 
       # Never silently reuse evaluations with an older or unknown
       # temporal convention. Existing files remain untouched.

@@ -18,60 +18,57 @@ SCE calibration workflow.
 The module uses:
 
 - `config/basins.txt`: selected basin IDs, one per line.
-- `config/experiment_daily.R` or `config/experiment_hourly.R`: experiment
-  configuration.
+- `config/experiment.R`: unified daily/hourly experiment configuration.
 - Prepared FUSE forcing files, settings, structural decisions and metadata
   from `01_prepare`.
 
 Relevant experiment settings include:
 
-- `timestep`: `daily` or `hourly`.
+- `--timestep`: required execution argument, `daily` or `hourly`.
 - `zDecision`: one or more FUSE structural decisions.
 - `nIter0`: number of initial parameter vectors per basin and decision.
 - `seed`: random seed used for reproducible sampling.
 - Calibration and evaluation periods required by FUSE evaluation.
 
-The current daily and hourly configurations use `zDecision = "126"`,
-`nIter0 = 500` and `seed = 1234`.
+The unified configuration uses `zDecision = "126"`, `nIter0 = 500`
+and `seed = 1234` for both resolutions.
 
 Basin IDs are read using the shared `read_basin_ids()` function. Empty
 lines, duplicate IDs and malformed basin lists are rejected.
 
 ## Running locally
 
-Run from the repository root:
+These commands start real LHS/FUSE calculations. From the repository root:
 
 ```bash
-DIR_MAIN="$PWD" \
-CONFIG_FILE="$PWD/config/experiment_daily.R" \
-bash scripts/02_iter0/run_iter0_local.sh
+cd "$(git rev-parse --show-toplevel)"
+bash scripts/02_iter0/run_iter0_local.sh \
+  "$PWD" "$PWD/config/experiment.R" --timestep daily
 ```
 
-For the hourly experiment, replace the configuration path with
-`config/experiment_hourly.R`.
+For hourly experiments, keep `config/experiment.R` and select
+`--timestep hourly`.
 
 The launcher requires R, the necessary R packages, FUSE dependencies
-and GNU Parallel.
+and GNU Parallel. It has no dry-run option: running it can create results.
 
 By default, it runs four concurrent processes. To change this:
 
 ```bash
-DIR_MAIN="$PWD" \
-CONFIG_FILE="$PWD/config/experiment_hourly.R" \
-NCORES=8 \
-bash scripts/02_iter0/run_iter0_local.sh
+cd "$(git rev-parse --show-toplevel)"
+NCORES=8 bash scripts/02_iter0/run_iter0_local.sh \
+  "$PWD" "$PWD/config/experiment.R" --timestep hourly
 ```
 
 When multiple structural decisions are configured, the launcher runs
 every selected basin for every configured decision.
 
-To restrict execution to one configured decision, set `ZDECISION`:
+To restrict execution to one configured decision, use `--zdecision 126`:
 
 ```bash
-DIR_MAIN="$PWD" \
-CONFIG_FILE="$PWD/config/experiment_daily.R" \
-ZDECISION=126 \
-bash scripts/02_iter0/run_iter0_local.sh
+cd "$(git rev-parse --show-toplevel)"
+bash scripts/02_iter0/run_iter0_local.sh \
+  "$PWD" "$PWD/config/experiment.R" --timestep daily --zdecision 126
 ```
 
 Each basin/decision combination receives an independent temporary FUSE
@@ -82,11 +79,13 @@ workspace.
 On ARC, submit from the repository root:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 bash scripts/02_iter0/submit_iter0_hpc_arc.sh \
-  "$PWD" "$PWD/config/experiment_daily.R"
+  "$PWD" "$PWD/config/experiment.R" --timestep daily
 ```
 
-Use `config/experiment_hourly.R` for the hourly experiment.
+For an hourly ARC submission, keep the same configuration file and use
+`--timestep hourly` instead of `--timestep daily`.
 
 The submitter validates the basin list and configured decisions, then
 submits one Slurm job array per selected structural decision.
@@ -97,8 +96,9 @@ Each array task processes one basin and one decision using
 To submit only one configured decision:
 
 ```bash
-ZDECISION=126 bash scripts/02_iter0/submit_iter0_hpc_arc.sh \
-  "$PWD" "$PWD/config/experiment_daily.R"
+cd "$(git rev-parse --show-toplevel)"
+bash scripts/02_iter0/submit_iter0_hpc_arc.sh \
+  "$PWD" "$PWD/config/experiment.R" --timestep daily --zdecision 126
 ```
 
 The ARC runner requests one CPU, 4 GB per CPU and 12 hours per task.
@@ -108,11 +108,13 @@ The ARC runner requests one CPU, 4 GB per CPU and 12 hours per task.
 On FIR, submit from the repository root:
 
 ```bash
+cd "$(git rev-parse --show-toplevel)"
 bash scripts/02_iter0/submit_iter0_hpc_fir.sh \
-  "$PWD" "$PWD/config/experiment_daily.R"
+  "$PWD" "$PWD/config/experiment.R" --timestep daily
 ```
 
-The optional `ZDECISION` variable works as on ARC.
+The optional `--zdecision` argument works as on ARC. For an hourly
+FIR submission, select `--timestep hourly`.
 
 Each array task runs one basin/decision combination through
 `run_iter0_hpc_fir.slurm`.
@@ -182,8 +184,9 @@ basin/decision output directory.
 
 ## Scope and reproducibility
 
-A repository clone should represent one fixed experiment and timestep.
-Daily and hourly results use separate output directories.
+A repository clone uses one fixed basin selection and unified experiment
+configuration for both resolutions. Select the timestep for each run;
+daily and hourly results use separate output directories.
 
 The module supports multiple configured structural decisions for `iter0`,
 but downstream workflow stages must be checked separately before assuming
