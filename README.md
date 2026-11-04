@@ -29,6 +29,7 @@ validation procedures.
 | `scripts/03_experiments/` | Spatial experiment partitions |
 | `scripts/04_simulations/` | Emulator simulations and local calibration |
 | `scripts/05_evaluation/` | Evaluation of archived FUSE hydrographs |
+| `scripts/06_analysis/` | Consolidation and paired comparison of evaluation results |
 
 The workflow uses the unified `config/experiment.R` configuration for
 daily and hourly experiments, spatial strategies and emulator methods.
@@ -178,6 +179,27 @@ Documentation:
 
 - [FUSE evaluation](scripts/05_evaluation/README.md)
 
+### 6. Consolidate and compare evaluation results
+
+The analysis module collects archived evaluation results and compares
+continuous streamflow performance and flood metrics across matching daily
+and hourly simulations. It supports incomplete campaigns and retains the
+provenance and coverage of the evaluated simulations.
+
+Continuous comparisons use the same valid daily observation dates.
+
+Because of the FUSE temporal convention, daily simulations may end one
+calendar day before hourly simulations, requiring targeted recalculation
+of NSE and KGE (2009) on the common valid days.
+
+Existing evaluation metrics are reused whenever the valid-day sets are
+identical. Flood comparisons reuse the event metrics already produced
+by `05_evaluation`.
+
+Documentation:
+
+- [Analysis and paired comparisons](scripts/06_analysis/README.md)
+
 ## Scientific comparison principles
 
 ### Daily versus hourly
@@ -191,7 +213,9 @@ resolutions:
 Both are assessed against the original CAMELS-NZ daily observations.
 
 The same calendar days must be used when drawing paired conclusions
-about continuous performance.
+about continuous performance. The FUSE temporal convention can cause a
+one-day difference in archived endpoint coverage, so the analysis stage
+recalculates continuous metrics only when common-day pairing requires it.
 
 ### Flood events
 
