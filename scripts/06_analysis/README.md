@@ -143,11 +143,9 @@ Rscript --vanilla scripts/06_analysis/02_pair_floods.R \
 Rscript --vanilla scripts/06_analysis/02_pair_floods.R \
   "$EVALUATIONS" "$RUN/floods"
 
-Rscript --vanilla scripts/06_analysis/03_compare_paired_daily.R \
-  "$REPO" "$EVALUATIONS" "$RUN/continuous" --check
-
-Rscript --vanilla scripts/06_analysis/03_compare_paired_daily.R \
-  "$REPO" "$EVALUATIONS" "$RUN/continuous"
+DIR_MAIN="$REPO" CONFIG_FILE="$REPO/config/experiment.R" \
+  bash scripts/06_analysis/03_compare_paired_daily_local.sh \
+  "$EVALUATIONS" "$RUN/continuous" --ncores=8
 
 printf 'Analysis outputs: %s\n' "$RUN"
 ```
@@ -162,6 +160,35 @@ for each run.
 If archived metadata still point to unavailable HPC configuration paths,
 `03_compare_paired_daily.R` deliberately stops. Resolve the provenance
 issue before rerunning; do not bypass the configuration check.
+
+## Parallel execution of continuous comparisons
+
+`03_compare_paired_daily.R` supports optional multicore execution on
+macOS and Linux through `parallel::mclapply()`.
+
+The number of workers is controlled by `--ncores=N`. Direct R execution
+defaults to one core, preserving sequential behavior.
+
+Three launchers are available:
+
+- `03_compare_paired_daily_local.sh`: local execution with configurable cores.
+- `03_compare_paired_daily_hpc_arc.slurm`: multicore execution on ARC.
+- `03_compare_paired_daily_hpc_fir.slurm`: multicore execution on FIR.
+
+The local launcher requires `DIR_MAIN` and `CONFIG_FILE`. The latter must
+reference the canonical `config/experiment.R`.
+
+On HPC, the number of workers follows `SLURM_CPUS_PER_TASK`, configured
+through the SLURM CPU allocation rather than an explicit `--ncores` override.
+
+Only stage 03 is parallelized. Stages 01 and 02 remain unchanged.
+
+The parallel implementation preserves the scientific calculations,
+output schema and deterministic result ordering. Failed workers prevent
+publication of incomplete results.
+
+The optional `--check` mode performs the full comparison without writing
+output files. It is not a lightweight preliminary inspection.
 
 ## Output objects
 
@@ -178,13 +205,6 @@ The `continuous_metrics_descriptive` object in the evaluation collection
 is **not** a substitute for a strictly paired daily/hourly comparison.
 
 ## Validation and limitations
-
-The three scripts have been tested on a matched daily/hourly
-`kfold/fold_01` emulator pair for basin `1316`.
-
-The continuous comparison has additionally been tested with a temporary
-`localcalib/sce` pair for that basin. These are targeted tests, not
-full-campaign validation.
 
 `01_collect_evaluations.R` and `02_pair_floods.R` do not rerun simulations
 or individual evaluations.

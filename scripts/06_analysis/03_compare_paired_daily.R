@@ -8,7 +8,11 @@
 # to daily resolution, using identical observed days.
 #
 # Usage:
-#   Rscript 03_compare_paired_daily.R DIRMAIN EVALUATIONS_RDS OUTDIR [--check]
+#   Rscript 03_compare_paired_daily.R DIRMAIN EVALUATIONS_RDS OUTDIR
+#     [--check] [--ncores=N]
+#
+# Optional multicore execution on macOS and Linux uses parallel::mclapply().
+# Scientific processing and the output RDS schema are unchanged.
 #
 # Principles:
 #   - Discover complete daily/hourly pairs from the consolidated evaluation RDS
@@ -25,23 +29,43 @@
 
 args <- commandArgs(trailingOnly = TRUE)
 
+usage <- paste(
+  "Usage: Rscript 03_compare_paired_daily.R",
+  "DIRMAIN EVALUATIONS_RDS OUTDIR [--check] [--ncores=N]"
+)
+
+if (length(args) < 3L) {
+  stop(usage, call. = FALSE)
+}
+
+cli_options <- if (length(args) > 3L) args[-seq_len(3L)] else character()
+core_options <- grep("^--ncores=", cli_options, value = TRUE)
+
 if (
-  !(length(args) %in% c(3L, 4L)) ||
-  (length(args) == 4L && args[[4L]] != "--check")
+  any(!cli_options %in% c("--check", core_options)) ||
+  sum(cli_options == "--check") > 1L ||
+  length(core_options) > 1L ||
+  (length(core_options) == 1L &&
+    !grepl("^--ncores=[1-9][0-9]*$", core_options))
 ) {
-  stop(
-    paste(
-      "Usage: Rscript 03_compare_paired_daily.R",
-      "DIRMAIN EVALUATIONS_RDS OUTDIR [--check]"
-    ),
-    call. = FALSE
-  )
+  stop(usage, call. = FALSE)
+}
+
+ncores <- if (length(core_options) == 1L) {
+  suppressWarnings(as.integer(sub("^--ncores=", "", core_options)))
+} else {
+  1L
+}
+
+if (is.na(ncores) || ncores < 1L ||
+    (ncores > 1L && .Platform$OS.type != "unix")) {
+  stop("Invalid --ncores: expected a positive integer on macOS/Linux", call. = FALSE)
 }
 
 dirMain <- normalizePath(args[[1L]], mustWork = TRUE)
 input_file <- normalizePath(args[[2L]], mustWork = TRUE)
 outdir <- path.expand(args[[3L]])
-check_only <- length(args) == 4L
+check_only <- "--check" %in% cli_options
 
 source(file.path(dirMain, "scripts/functions/common.R"))
 source(file.path(dirMain, "scripts/functions/fuse.R"))
@@ -65,6 +89,7 @@ cat("\n===== INPUT =====\n")
 cat("Repository:", dirMain, "\n")
 cat("Evaluations:", input_file, "\n")
 cat("Mode:", if (check_only) "CHECK" else "COMPARE", "\n")
+cat("Requested CPU cores:", ncores, "\n")
 
 evaluations <- readRDS(input_file)
 
@@ -381,10 +406,10 @@ calculate_metrics <- function(series, basin, periods) {
 # 4. Process all matched simulations
 # ==============================================================================
 
-results <- vector("list", length(matched_keys))
-diagnostics <- vector("list", length(matched_keys))
-
-for (i in seq_along(matched_keys)) {
+# Keep the exact same per-pair scientific calculations in a pure worker.
+# lapply() preserves the existing serial behavior; mclapply() preserves
+# the same input order when multiple CPU cores are requested.
+process_pair <- function(i) {
 
   key <- matched_keys[[i]]
 
@@ -796,9 +821,7 @@ for (i in seq_along(matched_keys)) {
     stringsAsFactors = FALSE
   )
 
-  results[[i]] <- continuous
-
-  diagnostics[[i]] <- list(
+  diagnostic <- list(
     identity = row_d[, keycols, drop = FALSE],
     daily = prepared_d$diagnostics,
     hourly = prepared_h$diagnostics,
@@ -825,7 +848,49 @@ for (i in seq_along(matched_keys)) {
     row.names = FALSE,
     digits = 9
   )
+
+  list(continuous = continuous, diagnostic = diagnostic)
 }
+
+indices <- seq_along(matched_keys)
+workers <- min(ncores, length(indices))
+cat("Parallel workers:", workers, "\n")
+
+pair_results <- if (workers == 1L) {
+  lapply(indices, process_pair)
+} else {
+  parallel::mclapply(
+    indices,
+    process_pair,
+    mc.cores = workers,
+    mc.preschedule = TRUE,
+    mc.set.seed = FALSE
+  )
+}
+
+# mclapply() may return try-error/NULL for a failed child process.
+# Never publish partial results or silently skip failed pairs.
+valid_results <- vapply(
+  pair_results,
+  function(x) {
+    is.list(x) &&
+      !inherits(x, "try-error") &&
+      is.data.frame(x$continuous) &&
+      is.list(x$diagnostic)
+  },
+  logical(1L)
+)
+
+assert(
+  length(pair_results) == length(matched_keys) && all(valid_results),
+  paste(
+    "One or more paired daily comparisons failed:",
+    paste(matched_keys[which(!valid_results)], collapse = ", ")
+  )
+)
+
+results <- lapply(pair_results, `[[`, "continuous")
+diagnostics <- lapply(pair_results, `[[`, "diagnostic")
 
 # ==============================================================================
 # 5. Assemble and validate results
