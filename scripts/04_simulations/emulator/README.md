@@ -183,14 +183,14 @@ Within each experiment split, results are organized under:
 - `models/emulator_step_<step>_<emulator>.RData` contains a trained
   emulator for the specified refinement step.
 - `<phase>/<basinID>/candidates_step_<step>_<emulator>.RData` is the
-  current per-emulator candidate file. GA creates it; FUSE evaluation
+  per-emulator candidate file. GA creates it; FUSE evaluation
   updates that same file with results and provenance.
-- `<phase>/<basinID>/candidates_step_<step>.RData` is the **historical
-  combined format**, containing rows for multiple emulators. It can be
+- `<phase>/<basinID>/candidates_step_<step>.RData` is the **combined candidate format**,
+  containing rows for multiple emulators. It can be
   read through `read_emulator_candidates()` but is not rewritten by the
-  new GA or FUSE scripts.
+  GA or FUSE evaluation scripts.
 
-The reader rejects an ambiguous combination of historical and individual
+The reader rejects an ambiguous combination of combined and individual
 files for the same emulator and step. Individual candidate writes are
 protected by per-file lock directories (`.lock`) and temporary-file
 serialization followed by atomic renaming. Interrupted lock directories
@@ -201,20 +201,20 @@ workspace before considering manual cleanup.
 
 Each scientific script accepts the optional `--resume` flag and an optional
 `--emulator RF,GBMv02` method filter. The wrapper forwards `--resume` to
-training, GA and FUSE candidate evaluation. Without `--resume`, the original
-refusal to overwrite existing outputs is retained.
+training, GA and FUSE candidate evaluation. Without `--resume`, existing outputs are
+protected against replacement.
 
 | Stage | `SKIP` | `RUN` | `STOP` |
 | --- | --- | --- | --- |
 | Training | Existing compatible model, with checked metadata and structure | Model absent | Existing unreadable or inconsistent model |
 | GA | Existing compatible candidate rows in either supported format | Candidate file absent | Invalid, incomplete or ambiguous candidate file |
-| FUSE | Complete candidate evaluation, including a recorded FUSE failure | Unevaluated candidates in an individual file, with no existing method workspace | Missing candidates, partial evaluation, inconsistent provenance, historical unevaluated file or existing workspace |
+| FUSE | Complete candidate evaluation, including a recorded FUSE failure | Unevaluated candidates in an individual file, with no existing method workspace | Missing candidates, partial evaluation, inconsistent provenance, unevaluated combined file or existing workspace |
 
 The checks occur per selected method (and per basin/step for GA and FUSE).
 They do **not** continue halfway through an interrupted candidate loop. A
 failed FUSE run with an explicit, complete failure record can count as
 evaluated; an incomplete file or leftover workspace must be examined
-rather than silently retried. A completed legacy file is skipped in
+rather than silently retried. A completed combined candidate file is skipped in
 `--resume` mode and is never rewritten.
 
 `--resume` may still launch substantial new computations when some files
@@ -229,7 +229,7 @@ refinement step and phase.
 
 It is not selected using the observed FUSE calibration or evaluation KGE.
 
-`04_reproduce_selected_FUSE.R` reads either historical combined or
+`04_reproduce_selected_FUSE.R` reads either combined or
 individual candidate files, retaining the original row index and candidate
 source in reproduction metadata when available. It provides two actions:
 

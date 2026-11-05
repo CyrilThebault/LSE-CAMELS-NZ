@@ -2,7 +2,7 @@
 
 # ==============================================================================
 # LSE-CAMELS-NZ
-# 06_analysis / 03_compare_paired_daily.R
+# 06_consolidation / 03_compare_paired_daily.R
 #
 # Compare daily FUSE simulations with hourly FUSE simulations aggregated
 # to daily resolution, using identical observed days.
@@ -12,7 +12,7 @@
 #     [--check] [--ncores=N]
 #
 # Optional multicore execution on macOS and Linux uses parallel::mclapply().
-# Scientific processing and the output RDS schema are unchanged.
+# Parallel execution preserves scientific calculations and output ordering.
 #
 # Principles:
 #   - Discover complete daily/hourly pairs from the consolidated evaluation RDS
@@ -24,7 +24,7 @@
 #   - Never recalculate flood metrics
 #   - Support incomplete campaigns
 #   - Never modify simulation or evaluation results
-#   - Never overwrite existing analysis outputs
+#   - Never overwrite existing consolidation outputs
 # ==============================================================================
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -805,12 +805,8 @@ process_pair <- function(i) {
     metric_source_hourly = metrics_h$source,
     NSE_daily = metrics_d$NSE,
     NSE_hourly = metrics_h$NSE,
-    delta_NSE = metrics_h$NSE - metrics_d$NSE,
     KGE2009_daily = metrics_d$KGE.2009,
     KGE2009_hourly = metrics_h$KGE.2009,
-    delta_KGE2009 = (
-      metrics_h$KGE.2009 - metrics_d$KGE.2009
-    ),
     metric_period_rule = md$metric_period_rule,
     daily_evaluation_dir = dirname(
       row_d$metadata_file[[1L]]
@@ -838,10 +834,8 @@ process_pair <- function(i) {
       "n_common_days",
       "NSE_daily",
       "NSE_hourly",
-      "delta_NSE",
       "KGE2009_daily",
       "KGE2009_hourly",
-      "delta_KGE2009",
       "metric_source_daily",
       "metric_source_hourly"
     )],
@@ -924,7 +918,7 @@ paired <- paired[
 rownames(paired) <- NULL
 
 comparison <- list(
-  schema_version = "lse_continuous_comparisons_v1",
+  schema_version = "lse_continuous_comparisons_v2",
   source_evaluations_rds = input_file,
   source_schema_version = evaluations$schema_version,
   matched_simulations = length(matched_keys),

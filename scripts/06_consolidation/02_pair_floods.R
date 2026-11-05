@@ -2,7 +2,7 @@
 
 # ==============================================================================
 # LSE-CAMELS-NZ
-# 06_analysis / 02_pair_floods.R
+# 06_consolidation / 02_pair_floods.R
 #
 # Pair existing daily flood-unit metrics from the consolidated evaluation RDS.
 #
@@ -15,7 +15,7 @@
 #   - Never redetect events
 #   - Never recalculate peak, volume or timing metrics
 #   - Keep original metric values and validity information
-#   - Summarize by basin to avoid event-count weighting across basins
+#   - Publish validated individual paired flood units only
 #   - Never overwrite an existing output
 # ==============================================================================
 
@@ -48,11 +48,6 @@ makekey <- function(x, columns) {
   )
 }
 
-median_finite <- function(x) {
-  x <- x[is.finite(x)]
-  if (!length(x)) return(NA_real_)
-  stats::median(x)
-}
 
 # ==============================================================================
 # 1. Load consolidated evaluations
@@ -393,22 +388,6 @@ for (i in seq_along(common_simulations)) {
       "paired_", metric, "_available"
     )]] <- available
 
-    delta_signed <- rep(NA_real_, length(d))
-    delta_absolute <- rep(NA_real_, length(d))
-
-    delta_signed[available] <- h[available] - d[available]
-
-    delta_absolute[available] <- (
-      abs(h[available]) - abs(d[available])
-    )
-
-    out[[paste0(
-      "delta_signed_", metric
-    )]] <- delta_signed
-
-    out[[paste0(
-      "delta_absolute_", metric
-    )]] <- delta_absolute
   }
 
   results[[i]] <- out
@@ -432,109 +411,15 @@ assert(
 )
 
 # ==============================================================================
-# 5. Basin-level scientific summaries
-# ==============================================================================
-
-group_columns <- c(
-  simulation_columns,
-  "period"
-)
-
-groups <- split(
-  paired,
-  makekey(paired, group_columns)
-)
-
-summary_rows <- lapply(groups, function(x) {
-
-  output <- data.frame(
-    strategy = x$strategy[[1L]],
-    unit = x$unit[[1L]],
-    basin = x$basin[[1L]],
-    method = x$method[[1L]],
-    modelStep = x$modelStep[[1L]],
-    period = x$period[[1L]],
-    n_flood_units = nrow(x),
-    n_paired_valid = sum(x$paired_valid),
-    stringsAsFactors = FALSE
-  )
-
-  for (metric in metric_columns) {
-
-    available <- x[[paste0(
-      "paired_", metric, "_available"
-    )]]
-
-    daily_error <- x[[paste0(metric, "_daily")]]
-    hourly_error <- x[[paste0(metric, "_hourly")]]
-
-    delta <- x[[paste0(
-      "delta_absolute_", metric
-    )]]
-
-    label <- switch(
-      metric,
-      peak_error_pct = "peak_pct",
-      volume_error_pct = "volume_pct",
-      peak_lag_days = "timing_days"
-    )
-
-    output[[paste0("n_", label)]] <- sum(available)
-
-    output[[paste0(
-      "median_abs_", label, "_daily"
-    )]] <- median_finite(
-      abs(daily_error[available])
-    )
-
-    output[[paste0(
-      "median_abs_", label, "_hourly"
-    )]] <- median_finite(
-      abs(hourly_error[available])
-    )
-
-    output[[paste0(
-      "median_delta_abs_", label
-    )]] <- median_finite(delta)
-
-    output[[paste0(
-      "fraction_improved_", label
-    )]] <- if (any(available)) {
-      mean(delta[available] < 0)
-    } else {
-      NA_real_
-    }
-  }
-
-  output
-})
-
-basin_summary <- do.call(rbind, summary_rows)
-rownames(basin_summary) <- NULL
-
-basin_summary <- basin_summary[
-  order(
-    basin_summary$strategy,
-    basin_summary$unit,
-    basin_summary$basin,
-    basin_summary$method,
-    basin_summary$period
-  ),
-  ,
-  drop = FALSE
-]
-
-# ==============================================================================
-# 6. Consolidated analysis object
+# 5. Consolidated paired flood object
 # ==============================================================================
 
 comparison <- list(
-  schema_version = "lse_flood_comparisons_v1",
+  schema_version = "lse_flood_comparisons_v2",
   source_evaluations_rds = input_file,
   source_schema_version = evaluations$schema_version,
   matched_simulations = length(common_simulations),
-  paired_units = paired,
-  basin_summary = basin_summary
+  paired_units = paired
 )
 
 cat("\n===== PAIRED FLOOD RESULTS =====\n")
@@ -546,7 +431,7 @@ cat(
   sum(paired$paired_peak_lag_days_available),
   "\n"
 )
-cat("Basin-period summary rows:", nrow(basin_summary), "\n")
+
 
 cat("\n===== VALIDITY BY PERIOD =====\n")
 
@@ -565,7 +450,7 @@ for (period in c("calibration", "evaluation")) {
 }
 
 # ==============================================================================
-# 7. Output publication
+# 6. Output publication
 # ==============================================================================
 
 if (check_only) {

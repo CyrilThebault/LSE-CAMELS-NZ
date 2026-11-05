@@ -29,7 +29,7 @@ validation procedures.
 | `scripts/03_experiments/` | Spatial experiment partitions |
 | `scripts/04_simulations/` | Emulator simulations and local calibration |
 | `scripts/05_evaluation/` | Evaluation of archived FUSE hydrographs |
-| `scripts/06_analysis/` | Consolidation and paired comparison of evaluation results |
+| `scripts/06_consolidation/` | Collection, validation and harmonization of evaluation results |
 
 The workflow uses the unified `config/experiment.R` configuration for
 daily and hourly experiments, spatial strategies and emulator methods.
@@ -179,26 +179,28 @@ Documentation:
 
 - [FUSE evaluation](scripts/05_evaluation/README.md)
 
-### 6. Consolidate and compare evaluation results
+### 6. Consolidate evaluation results
 
-The analysis module collects archived evaluation results and compares
-continuous streamflow performance and flood metrics across matching daily
-and hourly simulations. It supports incomplete campaigns and retains the
-provenance and coverage of the evaluated simulations.
+The consolidation module collects and validates archived evaluation
+results, records campaign coverage and provenance, and organizes
+comparable daily and hourly simulation results.
 
-Continuous comparisons use the same valid daily observation dates.
+Continuous metrics are aligned on common valid daily observation dates.
+Archived NSE and KGE (2009) values are reused when their valid-day
+coverage matches; otherwise, the affected metrics are recalculated
+on common days.
 
-Because of the FUSE temporal convention, daily simulations may end one
-calendar day before hourly simulations, requiring targeted recalculation
-of NSE and KGE (2009) on the common valid days.
+Daily flood evaluation units are paired across simulation resolutions,
+retaining the peak, volume and timing metrics calculated by
+`05_evaluation`.
 
-Existing evaluation metrics are reused whenever the valid-day sets are
-identical. Flood comparisons reuse the event metrics already produced
-by `05_evaluation`.
+The module publishes individual consolidated and paired results.
+Figure-specific performance differences and scientific aggregations
+are handled by `07_plots`.
 
 Documentation:
 
-- [Analysis and paired comparisons](scripts/06_analysis/README.md)
+- [Consolidation of evaluation results](scripts/06_consolidation/README.md)
 
 ## Scientific comparison principles
 
@@ -249,8 +251,9 @@ spatial partitions and archived simulation metadata.
 Individual modules provide validation or check modes where
 appropriate. The local emulator pipeline accepts `--resume`, with
 `SKIP / RUN / STOP` decisions at the appropriate model or candidate level.
-Historical combined candidate files are readable but protected against
-modification. Existing scientific results are not silently replaced.
+Combined candidate files are supported for reading but are not
+modified. Existing scientific results are protected against
+unintended replacement.
 
 The planner reports partition-level readiness; use each module's own checks
 to establish result-level completeness. Do not assume that a protected fold

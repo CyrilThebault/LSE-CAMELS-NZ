@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=lse06_daily
-#SBATCH --account=rrg-mclark
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -12,17 +11,17 @@
 
 set -euo pipefail
 
-# FIR software environment; matches existing HPC calibration launchers.
-module --force purge
-module load StdEnv/2023
-module load gcc/12.3
-module load cmake/3.31.0
-module load hdf5/1.14.6
-module load netcdf/4.9.3
+# ARC software environment; matches existing HPC calibration launchers.
+. /work/comphyd_lab/local/modules/spack/2024v5/lmod-init-bash
+module purge
+module unuse "$MODULEPATH"
+module use /work/comphyd_lab/local/modules/spack/2024v5/modules/linux-rocky8-x86_64/Core/
+module load gcc/14.2.0
+module load cmake/3.30.2
+module load hdf5/1.14.3
+module load netcdf-c/4.9.2
 module load netcdf-fortran/4.6.1
-module load r/4.4.0
-export HDF5_INCLUDE_DIR="$EBROOTHDF5/include"
-export HDF5_LIB_DIR="$EBROOTHDF5/lib"
+module load r/4.4.1
 
 DIR_MAIN="${DIR_MAIN:?Set DIR_MAIN}"
 CONFIG_FILE="${CONFIG_FILE:?Set CONFIG_FILE}"
@@ -41,4 +40,4 @@ for arg in "$@"; do
   esac
 done
 
-bash "$DIR_MAIN/scripts/06_analysis/03_compare_paired_daily_local.sh" "$@"
+bash "$DIR_MAIN/scripts/06_consolidation/03_compare_paired_daily_local.sh" "$@"

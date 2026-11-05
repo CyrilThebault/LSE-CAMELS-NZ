@@ -10,7 +10,7 @@ plots/
 logs/
 
 # Work-in-progress modules kept locally
-/scripts/06_analysis/legacy/
+/scripts/06_consolidation/legacy/
 /testcase/
 
 # Local plotting helpers used by WIP analysis

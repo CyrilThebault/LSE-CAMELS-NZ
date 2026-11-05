@@ -233,130 +233,80 @@ Local calibration results are identified by method `sce`.
 
 ## Running evaluations
 
-Run the commands from the repository root.
+The evaluators use archived FUSE hydrographs and do not run FUSE or
+generate missing simulations. Each archive must contain compatible
+simulation metadata and reference a valid experiment configuration.
 
-The commands below use concrete example paths. In an existing checkout,
-these paths may contain legacy archives produced with the former
-`experiment_daily.R` or `experiment_hourly.R` configurations. Such archives
-are not automatically compatible with the current evaluation interfaces:
-some older emulator archives also lack required provenance fields, and
-older evaluations may not record `complete_calendar_days_v1`.
+The commands below use paths relative to `DIR_MAIN`. Each example
+requires the corresponding simulation archive to be available and
+compatible with the selected experiment.
 
-The examples demonstrate commands for compatible archives, not permission
-to overwrite historical results. Verify archive provenance separately
-before execution. `--check` performs evaluation calculations without
-publishing persistent results; it is not merely a syntax check. Do not
-use `--force` to bypass metadata incompatibilities.
+`--check` performs the complete evaluation without writing persistent
+results. Without `--check` or `--force`, existing evaluation results are
+protected against replacement. `--force` permits deliberate replacement
+of evaluation outputs but does not bypass metadata validation.
 
 ### Evaluate one archived hydrograph
 
-```text
-Rscript scripts/05_evaluation/01_evaluate_FUSE.R \
-  HYDROGRAPH_DIR \
-  DIR_MAIN \
-  [--check|--force]
-```
+`01_evaluate_FUSE.R` accepts a hydrograph directory and the repository
+root. The directory must contain `qSim_selected.rds` and `metadata.rds`.
+The timestep and configuration are obtained from the archived metadata.
 
-Arguments:
-
-- `hydrograph_dir`: directory containing `qSim_selected.rds` and
-  `metadata.rds`.
-- `dirMain`: repository root.
-
-Options:
-
-- `--check`: compute and validate the evaluation without writing
-  persistent results.
-- `--force`: explicitly permit replacement of existing evaluation
-  results.
-
-Without either option, the evaluator does not overwrite an existing
-evaluation destination.
-
-The interface above uses placeholders and is not intended to be
-copied literally.
-
-For example, the following command checks a daily GBMv02 archive for
-basin 1316 at refinement step 2, provided its provenance has been validated
-against the current configuration:
+Example for a daily locally calibrated FUSE simulation:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-Rscript --vanilla scripts/05_evaluation/01_evaluate_FUSE.R \
-  "$PWD/experiments/daily/kfold/fold_01/hydrographs/zDecision_126/test/1316/step_2/GBMv02" \
-  "$PWD" --check
+export DIR_MAIN="$PWD"
+
+HYDROGRAPH_DIR="$DIR_MAIN/experiments/daily/localcalib/all_basins/hydrographs/zDecision_126/1009213/sce"
+
+Rscript --vanilla "$DIR_MAIN/scripts/05_evaluation/01_evaluate_FUSE.R" "$HYDROGRAPH_DIR" "$DIR_MAIN" --check
 ```
 
-This command requires a compatible archived hydrograph and computes
-metrics without writing persistent results. The historical archive at this
-path currently references a deleted configuration file; do not execute this
-example on that archive without a separately validated provenance migration.
+The individual evaluator validates the archived simulation identity,
+configuration and input data before calculating streamflow and flood
+metrics.
 
 ### Evaluate an experiment
 
-```text
-Rscript scripts/05_evaluation/02_evaluate_experiment.R \
-  EXPERIMENT_DIR \
-  CONFIG_FILE \
-  DIR_MAIN \
-  --timestep <daily|hourly> \
-  [--step N] [--check|--force]
+`02_evaluate_experiment.R` processes the selected archived simulations
+of an experiment. It takes the experiment directory, the unified
+configuration, the repository root and a mandatory timestep.
+
+Example for a daily k-fold experiment:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
+
+EXPERIMENT_DIR="$DIR_MAIN/experiments/daily/kfold/fold_01"
+
+Rscript --vanilla "$DIR_MAIN/scripts/05_evaluation/02_evaluate_experiment.R" "$EXPERIMENT_DIR" "$CONFIG_FILE" "$DIR_MAIN" --timestep daily --check
 ```
 
-Arguments:
+Example for an hourly k-fold experiment:
 
-- `experiment_dir`: experiment directory containing archived
-  hydrographs.
-- `config_file`: unified `config/experiment.R` file.
-- `dirMain`: repository root.
+```bash
+cd "$(git rev-parse --show-toplevel)"
+export DIR_MAIN="$PWD"
+export CONFIG_FILE="$DIR_MAIN/config/experiment.R"
 
-Options:
+EXPERIMENT_DIR="$DIR_MAIN/experiments/hourly/kfold/fold_01"
 
-- `--step N`: evaluate a specified emulator refinement step instead
-  of the final configured step.
-- `--check`: run evaluation checks without publishing result files.
-- `--force`: allow replacement of existing evaluation results.
+Rscript --vanilla "$DIR_MAIN/scripts/05_evaluation/02_evaluate_experiment.R" "$EXPERIMENT_DIR" "$CONFIG_FILE" "$DIR_MAIN" --timestep hourly --check
+```
 
-`--step` applies to emulator experiments, not local calibration.
+The experiment evaluator checks the selected basins, methods,
+hydrograph availability and metadata consistency. Missing simulations
+must be generated by the upstream simulation workflow.
+
+By default, emulator experiments use the final configured refinement
+step and the selected test simulations. The optional `--step N` selects
+another available emulator refinement step; it does not apply to local
+calibration.
 
 `--check` and `--force` cannot be combined.
-
-The campaign runner validates the expected basin and method
-combinations, reports missing hydrographs, and does not substitute
-earlier refinement steps for missing selected simulations.
-
-Missing hydrographs must be produced by the appropriate upstream
-simulation workflow before evaluation.
-
-The interface above uses placeholders. The following two complete
-examples illustrate daily and hourly k-fold evaluation commands. They
-require compatible, complete archives; the historical `fold_01` archives
-currently present in this checkout do not satisfy the current provenance
-requirements.
-
-Daily k-fold example:
-
-```bash
-cd "$(git rev-parse --show-toplevel)"
-Rscript --vanilla scripts/05_evaluation/02_evaluate_experiment.R \
-  "$PWD/experiments/daily/kfold/fold_01" \
-  "$PWD/config/experiment.R" "$PWD" --timestep daily --check
-```
-
-Hourly k-fold example:
-
-```bash
-cd "$(git rev-parse --show-toplevel)"
-Rscript --vanilla scripts/05_evaluation/02_evaluate_experiment.R \
-  "$PWD/experiments/hourly/kfold/fold_01" \
-  "$PWD/config/experiment.R" "$PWD" --timestep hourly --check
-```
-
-Run these commands only after the selected experiment has all its
-required compatible archived hydrographs. The campaign validates expected
-basin-emulator combinations and refuses missing or incompatible provenance;
-an incomplete archive causes a preflight error. The `--check` option
-calculates evaluations without writing persistent result files.
 
 ## Output organization
 

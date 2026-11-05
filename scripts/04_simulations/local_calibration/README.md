@@ -238,15 +238,10 @@ Existing calibration outputs are never overwritten.
 
 ## Evaluation
 
-The generic evaluator accepts three positional arguments:
+The experiment evaluator `scripts/05_evaluation/02_evaluate_experiment.R`
+uses the unified `config/experiment.R` and requires an explicit
+`--timestep daily` or `--timestep hourly` argument.
 
-```text
-Rscript scripts/05_evaluation/02_evaluate_experiment.R \
-  EXPERIMENT_DIR CONFIG_FILE DIR_MAIN
-```
-
-The names above are placeholders for actual paths. The evaluator
-still has a separate legacy timestep interface that must be migrated
-before documenting execution with the unified configuration.
-
-The evaluator uses archived hydrographs and never runs FUSE.
+It evaluates compatible archived hydrographs without running FUSE.
+See [evaluation documentation](../../05_evaluation/README.md) for
+execution options, provenance requirements and output files.
